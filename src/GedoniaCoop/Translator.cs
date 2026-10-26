@@ -50,6 +50,22 @@ namespace GedoniaCoop
         static string PluginDir { get { return Path.GetDirectoryName(typeof(Translator).Assembly.Location); } }
         static string MissingFile { get { return Path.Combine(Paths.ConfigPath, "gedonia-coop-missing-de.txt"); } }
 
+        // The tables hold the game's own texts, so the public build ships
+        // without them: no tables, no German (and no "Deutsch" button).
+        static bool? available;
+        public static bool Available
+        {
+            get
+            {
+                if (available == null)
+                {
+                    try { available = Directory.GetFiles(PluginDir, "de-*.tsv").Length > 0; }
+                    catch { available = false; }
+                }
+                return available.Value;
+            }
+        }
+
         static void Load()
         {
             exact = new Dictionary<string, string>();

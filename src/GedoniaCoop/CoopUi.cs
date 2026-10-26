@@ -128,7 +128,8 @@ namespace GedoniaCoop
             {
                 // Right of "English" (above it is the wishlist banner).
                 Bounds bb = NGUIMath.CalculateRelativeWidgetBounds(english.transform.parent, english.transform);
-                Clone(english, "Deutsch", new Vector3(bb.size.x + 8f, 0f, 0f), "Deutsch", "Deutsch", "OnMenuGerman");
+                if (Translator.Available) Clone(english, "Deutsch", new Vector3(bb.size.x + 8f, 0f, 0f), "Deutsch", "Deutsch", "OnMenuGerman");
+                else Plugin.Log.LogInfo("No German tables installed: no \"Deutsch\" button");
                 // The game's own language buttons end German.
                 english.onClick.Add(new EventDelegate(plugin, "OnMenuGameLanguage"));
                 russian.onClick.Add(new EventDelegate(plugin, "OnMenuGameLanguage"));

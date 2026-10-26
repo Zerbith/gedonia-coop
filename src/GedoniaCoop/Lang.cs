@@ -19,7 +19,7 @@ namespace GedoniaCoop
             {
                 if (german == null)
                 {
-                    try { german = File.Exists(ConfigFile) && File.ReadAllText(ConfigFile).Trim() == "de"; }
+                    try { german = Translator.Available && File.Exists(ConfigFile) && File.ReadAllText(ConfigFile).Trim() == "de"; }
                     catch { german = false; }
                 }
                 return german.Value;

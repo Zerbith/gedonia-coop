@@ -58,7 +58,7 @@ namespace GedoniaCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "gedonia.coop";
-        public const string Version = "0.6.0";
+        public const string Version = "0.6.1";
         const float SendInterval = 0.05f;
         const float AppearanceInterval = 1f;
         const float PeerTimeout = 5f;
@@ -461,7 +461,7 @@ namespace GedoniaCoop
 
         public void OnTopCoopButton() { coopUi.MenuOpen = !coopUi.MenuOpen; if (ui.Open) ui.Close(); }
 
-        public void OnMenuGerman() { Lang.German = true; coopUi.Relabel(); Translator.Refresh(); Log.LogInfo("Language: German"); }
+        public void OnMenuGerman() { if (!Translator.Available) return; Lang.German = true; coopUi.Relabel(); Translator.Refresh(); Log.LogInfo("Language: German"); }
 
         public void OnMenuGameLanguage() { if (!Lang.German) return; Lang.German = false; coopUi.Relabel(); Translator.Refresh(); Log.LogInfo("Language: game's own"); }
 

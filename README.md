@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.6.0). Tested with Steam build 16727998.
+Status: **playable alpha** (0.6.1). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -23,7 +23,7 @@ No game files are included; you need your own copy of the game.
   generated dungeons, travelling merchants and bards, time of day and weather, companions and summons,
   the Northern Kingdoms.
 - **Dying:** respawn crystals in the villages instead of the reload-only death screen.
-- Pause menu does not stop the game in co-op. Optional German translation (see below).
+- Pause menu does not stop the game in co-op.
 
 ## Install (players)
 
@@ -72,9 +72,9 @@ You need your own test save named `coop-test.es3` in `backups\`.
 
 ## German translation
 
-The plugin can show the whole game in German (button "Deutsch" in the main menu). The translation
-tables pair the game's own English texts with the German ones, so they are not in this repository;
-`tools/TextExtract.cs` and the plugin's export steps rebuild the English side from a local copy.
+The plugin can show the whole game in German. The translation tables pair the game's own English
+texts with the German ones, so they are not part of this repository or its releases. Without them the
+plugin stays English and shows no "Deutsch" button.
 
 ## Known issues
 
