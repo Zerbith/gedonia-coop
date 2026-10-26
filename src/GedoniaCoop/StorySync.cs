@@ -31,7 +31,7 @@ namespace GedoniaCoop
     // has, or still has a quest open that the host finished, is repaired.
     public class StorySync
     {
-        class Pending { public int Id; public string Name; public float NextSend; }
+        class Pending { public int Id; public string Name; public int Payer; public float NextSend; }
 
         readonly Net net;
         readonly Func<IEnumerable<int>> peers;
@@ -97,7 +97,7 @@ namespace GedoniaCoop
                 target.SendMessage(name, options);
                 return;
             }
-            s.Local(name);
+            s.Local(name, DialogueSync.AnswerPayer);
         }
 
         [HarmonyPatch]
@@ -130,7 +130,7 @@ namespace GedoniaCoop
             }
         }
 
-        void Local(string name)
+        void Local(string name, int payer)
         {
             if (net.IsHost)
             {
@@ -141,10 +141,10 @@ namespace GedoniaCoop
                     Plugin.Log.LogInfo(Plugin.Stamp() + " Story answer '" + name + "' ignored on the host: a friend's identical answer just ran");
                     return;
                 }
-                RunAndLog(name, net.LocalId);
+                RunAndLog(name, payer != 0 ? payer : net.LocalId, payer); // a recruit goes to whoever paid
                 return;
             }
-            Pending p = new Pending { Id = ++nextIntent, Name = name, NextSend = 0f };
+            Pending p = new Pending { Id = ++nextIntent, Name = name, Payer = payer, NextSend = 0f };
             pending.Add(p);
             IntentsSent++;
             Plugin.Log.LogInfo(Plugin.Stamp() + " Story intent #" + p.Id + " '" + name + "' sent to the host");
@@ -154,7 +154,7 @@ namespace GedoniaCoop
         void SendIntent(Pending p)
         {
             using (MemoryStream ms = new MemoryStream())
-            using (BinaryWriter w = new BinaryWriter(ms)) { w.Write(p.Id); w.Write(p.Name); w.Flush(); net.SendMessage(Net.MsgStoryIntent, 0, ms.ToArray(), true); }
+            using (BinaryWriter w = new BinaryWriter(ms)) { w.Write(p.Id); w.Write(p.Name); w.Write(p.Payer); w.Flush(); net.SendMessage(Net.MsgStoryIntent, 0, ms.ToArray(), true); }
             p.NextSend = Time.realtimeSinceStartup + 1f;
         }
 
@@ -169,16 +169,38 @@ namespace GedoniaCoop
         // the player who caused the event, so on everyone else's machine the
         // freshly added follower is removed again (the recruiter's companion
         // shows up there as a mirror instead).
-        void Run(string name, int number, int origin)
+        // Policy for answers that cost money or items: only the payer (the
+        // member chosen by the conversation, or whoever answered alone) pays.
+        // Everyone else runs the function as if they had it: item checks pass,
+        // removals are skipped and any gold it takes is given back.
+        public static bool SkipPayment;
+        public int PaymentsSkipped;
+
+        void Run(string name, int number, int origin, int payer)
         {
             PlayerScript player = PlayerScript.instance;
             List<CompanionNPCModule> before = player != null ? new List<CompanionNPCModule>(player.currentCOmpanions) : null;
+            bool skip = payer != 0 && payer != net.LocalId && player != null;
+            const int Float = 10000000;
+            int gold = player != null ? player.gold : 0;
             applying = true;
             CurrentEvent = number;
             spawnIndex = 0;
+            if (skip) { SkipPayment = true; player.gold = gold + Float; }
             try { GameManager.instance.SendMessage(name, SendMessageOptions.DontRequireReceiver); }
             catch (Exception e) { Plugin.Log.LogError("Story function '" + name + "' failed: " + e); }
-            finally { applying = false; CurrentEvent = 0; }
+            finally
+            {
+                applying = false; CurrentEvent = 0;
+                if (skip)
+                {
+                    SkipPayment = false;
+                    int change = player.gold - gold - Float;
+                    player.gold = gold + Mathf.Max(0, change);
+                    PaymentsSkipped++;
+                    Plugin.Log.LogInfo(Plugin.Stamp() + " '" + name + "' is paid by player " + payer + "; not by us (gold change " + change + " ignored if negative)");
+                }
+            }
             if (before == null || origin == 0 || origin == net.LocalId) return;
             List<CompanionNPCModule> added = player.currentCOmpanions.FindAll(c => c != null && !before.Contains(c));
             foreach (CompanionNPCModule c in added)
@@ -194,11 +216,14 @@ namespace GedoniaCoop
 
         // ---------- host ----------
 
-        void RunAndLog(string name, int origin)
+        readonly Dictionary<int, int> payerOf = new Dictionary<int, int>(); // event number -> who pays (0 = everyone)
+
+        void RunAndLog(string name, int origin, int payer)
         {
             seq++;
             originOf[seq] = origin;
-            Run(name, seq, origin);
+            payerOf[seq] = payer;
+            Run(name, seq, origin, payer);
             log.Add(new KeyValuePair<int, string>(seq, name));
             lastRun[name] = Time.realtimeSinceStartup;
             EventsRun++;
@@ -208,16 +233,17 @@ namespace GedoniaCoop
 
         void SendEvent(int number, string name, int target)
         {
-            int origin;
+            int origin, payer;
             originOf.TryGetValue(number, out origin);
+            payerOf.TryGetValue(number, out payer);
             using (MemoryStream ms = new MemoryStream())
-            using (BinaryWriter w = new BinaryWriter(ms)) { w.Write(number); w.Write(name); w.Write(origin); w.Flush(); net.SendMessage(Net.MsgStoryEvent, target, ms.ToArray(), true); }
+            using (BinaryWriter w = new BinaryWriter(ms)) { w.Write(number); w.Write(name); w.Write(origin); w.Write(payer); w.Flush(); net.SendMessage(Net.MsgStoryEvent, target, ms.ToArray(), true); }
         }
 
         void HostIntent(Net.Message m)
         {
-            int id; string name;
-            using (BinaryReader r = new BinaryReader(new MemoryStream(m.Payload))) { id = r.ReadInt32(); name = r.ReadString(); }
+            int id, payer; string name;
+            using (BinaryReader r = new BinaryReader(new MemoryStream(m.Payload))) { id = r.ReadInt32(); name = r.ReadString(); payer = r.ReadInt32(); }
             int done;
             intentDone.TryGetValue(m.Sender, out done);
             bool ran = true;
@@ -235,7 +261,7 @@ namespace GedoniaCoop
                 else
                 {
                     IntentsRun++;
-                    RunAndLog(name, m.Sender);
+                    RunAndLog(name, payer != 0 ? payer : m.Sender, payer);
                 }
             }
             using (MemoryStream ms = new MemoryStream())
@@ -264,7 +290,7 @@ namespace GedoniaCoop
         void ClientEvent(Net.Message m, float now)
         {
             int number; string name;
-            using (BinaryReader r = new BinaryReader(new MemoryStream(m.Payload))) { number = r.ReadInt32(); name = r.ReadString(); originOf[number] = r.ReadInt32(); }
+            using (BinaryReader r = new BinaryReader(new MemoryStream(m.Payload))) { number = r.ReadInt32(); name = r.ReadString(); originOf[number] = r.ReadInt32(); payerOf[number] = r.ReadInt32(); }
             if (applied == 0 && number > 1 && buffered.Count == 0) applied = number - 1; // joined mid-session
             if (number > applied) buffered[number] = name;
             Drain(now);
@@ -280,9 +306,10 @@ namespace GedoniaCoop
                 applied++;
                 // Our own intent coming back: done waiting for it.
                 pending.RemoveAll(p => p.Name == name);
-                int origin;
+                int origin, payer;
                 originOf.TryGetValue(applied, out origin);
-                Run(name, applied, origin);
+                payerOf.TryGetValue(applied, out payer);
+                Run(name, applied, origin, payer);
                 EventsApplied++;
                 lastStoryAt = now;
                 Plugin.Log.LogInfo(Plugin.Stamp() + " Story event #" + applied + " '" + name + "' applied");
@@ -462,6 +489,30 @@ namespace GedoniaCoop
 
         // Test helpers: the same path a dialogue answer takes, and a change
         // made behind the sync's back (to exercise the repair).
+        [HarmonyPatch(typeof(PlayerScript), "ContainsItem", new Type[] { typeof(Item) })]
+        static class ContainsPatch
+        {
+            static void Postfix(ref bool __result) { if (SkipPayment) __result = true; }
+        }
+
+        [HarmonyPatch(typeof(PlayerScript), "ContainsItem", new Type[] { typeof(Item), typeof(int) })]
+        static class ContainsAmountPatch
+        {
+            static void Postfix(ref bool __result) { if (SkipPayment) __result = true; }
+        }
+
+        [HarmonyPatch]
+        static class RemovePatch
+        {
+            static IEnumerable<MethodBase> TargetMethods()
+            {
+                foreach (MethodInfo m in typeof(PlayerScript).GetMethods(BindingFlags.Instance | BindingFlags.Public))
+                    if (m.Name == "RemoveItemFromInventory") yield return m;
+            }
+
+            static bool Prefix() { return !SkipPayment; }
+        }
+
         public static void TestAnswer(string name)
         {
             Plugin.Log.LogInfo(Plugin.Stamp() + " Test: dialogue answer '" + name + "'");

@@ -21,14 +21,33 @@ namespace GedoniaCoop
         // Settlements with a crystal. Gedonia: SubZone names (their colliders give
         // the middle). The Northern Kingdoms have no village SubZones: middles
         // where buildings cluster near the world map labels (region 11 of the map).
-        struct Village { public string World, Name; public float X, Z; public bool Fixed; }
+        // Spot: where the crystal stands (x, z), measured once with everything
+        // loaded (test step gotocrystal with -coop-test-crystalwait). Searching
+        // on each PC placed it differently where the water came in late (a
+        // friend's Weystane crystal stood in the pond).
+        struct Village { public string World, Name; public float X, Z; public bool Fixed; public float SX, SZ; public bool HasSpot; }
         static readonly Village[] Villages =
         {
-            G("Weystane"), G("Steepport"), G("Stawford"), G("Fayreach"), G("Korram"), G("Ertoron"), G("Explorer's camp"),
-            N("Erynard", -440f, 240f), N("Ironclad clan", 220f, -835f), N("Sons of Thunder", -1070f, 1255f),
+            // measured 2026-10-26 (survey run, 15 s settle, room around, 8 m from water; screenshots checked)
+            G("Weystane", 728.0f, 627.0f), G("Steepport", 93.1f, 353.6f), G("Stawford", 1440.2f, 266.8f), G("Fayreach", 762.2f, -701.4f),
+            G("Korram", 2123.3f, 420.0f), G("Ertoron", 1238.0f, -397.0f), G("Explorer's camp", 562.3f, -1025.9f),
+            N("Erynard", -440f, 240f, -440.0f, 240.0f), N("Ironclad clan", 220f, -835f, 220.0f, -829.0f), N("Sons of Thunder", -1070f, 1255f, -1064.0f, 1255.0f),
         };
-        static Village G(string name) { return new Village { World = "Gedonia", Name = name }; }
-        static Village N(string name, float x, float z) { return new Village { World = "NorthernKingdoms", Name = name, X = x, Z = z, Fixed = true }; }
+        static Village G(string name, float sx, float sz) { return new Village { World = "Gedonia", Name = name, SX = sx, SZ = sz, HasSpot = true }; }
+        static Village N(string name, float x, float z, float sx, float sz) { return new Village { World = "NorthernKingdoms", Name = name, X = x, Z = z, Fixed = true, SX = sx, SZ = sz, HasSpot = true }; }
+
+        // The ground at a measured spot (not water); false while it hasn't streamed in.
+        static bool Ground(Village v, out Vector3 at)
+        {
+            at = Vector3.zero;
+            int water = LayerMask.NameToLayer("Water");
+            int mask = water >= 0 ? ~(1 << water) : ~0;
+            bool found = false;
+            // The terrain itself (a tree crown or roof above must not carry it).
+            foreach (RaycastHit hit in Physics.RaycastAll(new Vector3(v.SX, 600f, v.SZ), Vector3.down, 1200f, mask, QueryTriggerInteraction.Ignore))
+                if (hit.collider.name.StartsWith("Terrain") && (!found || hit.point.y > at.y)) { at = hit.point; found = true; }
+            return found;
+        }
         readonly HashSet<string> visited = new HashSet<string>(); // crystals placed this session: been there
 
         // The village's middle, or false when unknown (its SubZone not found).
@@ -43,6 +62,8 @@ namespace GedoniaCoop
             return true;
         }
         const float BindRange = 3f, ReviveDelay = 10f, SpawnRange = 120f; // water surfaces stream in late: place close up
+        public static float SettleSeconds = 3f; // test -coop-test-crystalwait (survey of the spots)
+        public static bool Survey; // test: search the spots again instead of using the measured ones
 
         readonly Dictionary<string, GameObject> stones = new Dictionary<string, GameObject>();
         readonly Dictionary<string, Vector3> spots = new Dictionary<string, Vector3>();
@@ -104,12 +125,13 @@ namespace GedoniaCoop
                     bool loading = InterfaceManager.instance != null && InterfaceManager.instance.panels[10].activeSelf;
                     float since;
                     if (loading || !nearSince.TryGetValue(v, out since)) { nearSince[v] = Time.realtimeSinceStartup; continue; }
-                    if (Time.realtimeSinceStartup - since < 3f) continue;
+                    if (Time.realtimeSinceStartup - since < SettleSeconds) continue;
                     // On dry, open ground nearest to the village's middle (Weystane's
                     // middle is a pond): rings around it until a spot fits.
                     Vector3 at;
                     string why;
-                    if (!DrySpot(center, out at, out why)) continue;
+                    if (vil.HasSpot && !Survey) { if (!Ground(vil, out at)) continue; why = "measured spot"; }
+                    else if (!DrySpot(center, out at, out why)) continue;
                     GameObject proto = Resources.Load<GameObject>("Expeditions/MinableCrystals");
                     if (proto == null) continue;
                     GameObject g = UnityEngine.Object.Instantiate(proto, at, Quaternion.identity);
@@ -190,6 +212,11 @@ namespace GedoniaCoop
                     foreach (RaycastHit h in Physics.RaycastAll(new Vector3(p.x, center.y + 200f, p.z), Vector3.down, 500f, ~0, QueryTriggerInteraction.Collide))
                         if (h.collider.gameObject.layer == water && h.point.y > ground.point.y - 0.1f) wet = true;
                     if (wet) continue;
+                    // Room around it (no wall, rock, stair or tent rope) and no water close by.
+                    bool crowded = false;
+                    foreach (Collider c in Physics.OverlapSphere(ground.point + Vector3.up * 1.4f, 1.6f, ~0, QueryTriggerInteraction.Ignore))
+                        if (!c.name.StartsWith("Terrain") && c.GetComponentInParent<PlayerScript>() == null) { crowded = true; break; }
+                    if (crowded || (water >= 0 && Physics.CheckSphere(ground.point, 8f, 1 << water, QueryTriggerInteraction.Collide))) continue;
                     at = ground.point;
                     why = ring * 6 + " m from the village middle " + center.ToString("F0");
                     return true;

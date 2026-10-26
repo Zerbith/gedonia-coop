@@ -137,6 +137,23 @@ namespace GedoniaCoop
             return true;
         }
 
+        // EffectSync: the shared enemy or follower t belongs to, whoever simulates it.
+        public bool SharedActor(Transform t, out int id, out Transform root)
+        {
+            id = 0; root = null;
+            NPC n = t.GetComponentInParent<NPC>();
+            Enemy e;
+            if (n == null || !byNpc.TryGetValue(n, out e) || e.Go == null || e.Npc == null) return false;
+            id = e.Id; root = e.Go.transform;
+            return true;
+        }
+
+        public Transform ActorRoot(int id)
+        {
+            Enemy e;
+            return byId.TryGetValue(id, out e) && e.Go != null ? e.Go.transform : null;
+        }
+
         // SoundSync: the mirror of someone else's enemy or follower.
         public Transform MirrorRoot(int id)
         {
@@ -896,9 +913,14 @@ namespace GedoniaCoop
             if (byId.TryGetValue(id, out e) && e.Role != Role.Owner && e.Npc != null && !e.Npc.isDead) KillLocally(e);
         }
 
+        // True while a death copied from the enemy's owner runs here (XpSync:
+        // the owner shares the XP of it).
+        public static bool RemoteDeath;
+
         void KillLocally(Enemy e)
         {
             applying = true;
+            RemoteDeath = true;
             try
             {
                 // Through the game's own death: local XP, lootable body, save entry.
@@ -908,7 +930,7 @@ namespace GedoniaCoop
                 Plugin.Log.LogInfo(Plugin.Stamp() + " Enemy " + e.Id + " (" + e.Npc.npcName + ") died: its owner killed it; loot here: " + e.Npc.loot.Count);
             }
             catch (Exception ex) { Plugin.Log.LogError("Remote death of enemy " + e.Id + " failed: " + ex); }
-            finally { applying = false; }
+            finally { applying = false; RemoteDeath = false; }
         }
 
         // ---------- puppets as targets ----------

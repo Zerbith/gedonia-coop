@@ -27,7 +27,7 @@ namespace GedoniaCoop
         Dictionary<int, string> baseline, sent, db, clientDb;
         readonly HashSet<int> known = new HashSet<int>();
         float baselineAt = -1f, nextDiff;
-        public int EntriesSent, EntriesApplied, EntriesStored, Skipped;
+        public int EntriesSent, EntriesApplied, EntriesStored, Skipped, BodiesKept;
         const int Chunk = 40;
 
         public WorldStateSync(Net net, Func<IEnumerable<int>> peers)
@@ -163,6 +163,15 @@ namespace GedoniaCoop
                         continue;
                     }
                     local[id] = data;
+                    // Someone looted an enemy's body ("0" after the loot): bodies keep
+                    // their own loot per player, so ours stays until we loot it.
+                    NPC body = isLoaded && data == "0" ? item.GetComponent<NPC>() : null;
+                    if (body != null && body.isDead)
+                    {
+                        BodiesKept++;
+                        EntriesStored++;
+                        continue;
+                    }
                     // A world event WorldEventSync runs live (phase, count, phase
                     // objects): its saved state is kept, not applied - applying
                     // it would set the phase without showing that phase's objects.
@@ -193,7 +202,7 @@ namespace GedoniaCoop
         public string Summary()
         {
             return net.IsHost ? "world baseline=" + (baseline != null ? baseline.Count : 0) + " sent=" + EntriesSent
-                : "world applied=" + EntriesApplied + " stored=" + EntriesStored + " skipped=" + Skipped;
+                : "world applied=" + EntriesApplied + " stored=" + EntriesStored + " skipped=" + Skipped + " bodiesKept=" + BodiesKept;
         }
     }
 }

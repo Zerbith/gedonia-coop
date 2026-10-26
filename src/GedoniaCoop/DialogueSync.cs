@@ -23,8 +23,9 @@ namespace GedoniaCoop
     //  - Every member runs the chosen answer with the game's own code; only the
     //    leader dispatches its story function (StorySync brings it to everyone).
     //  - An answer is open if ANY member meets its stat/skill/level/speech/
-    //    reputation requirements and EVERY member meets money/item ones (story
-    //    functions run on every machine and take it from each).
+    //    reputation requirements and ANY member has the money/items. One member
+    //    pays (the leader if they can, else the first who can): story functions
+    //    run on every machine, StorySync skips the payment everywhere else.
     public class DialogueSync
     {
         const byte KOpen = 0, KJoin = 1, KLeave = 2, KState = 3, KVote = 4, KDecide = 5, KEligible = 6;
@@ -33,6 +34,7 @@ namespace GedoniaCoop
         class Conv
         {
             public int Npc, Leader;
+            public int Payer; // who paid for an answer here: later answers' story functions take it (Sidmir: price asked, gold taken on "Let's go")
             public string NpcName = "";
             public Vector3 Pos;
             public List<int> Members = new List<int>();
@@ -49,6 +51,12 @@ namespace GedoniaCoop
         public static float VoteSeconds = 10f;
         static bool deciding;
         public static bool SuppressStory; // a member who isn't the leader runs a chosen answer
+        // Who pays for the answer running right now (0 = it costs nothing).
+        public static int AnswerPayer;
+        static int decidedPayer;
+        // Answering alone: a paid answer makes the rest of this conversation ours to pay.
+        static GameObject soloTarget;
+        static bool soloPaid;
 
         readonly Dictionary<int, Conv> convs = new Dictionary<int, Conv>();
         Conv mine;
@@ -168,6 +176,7 @@ namespace GedoniaCoop
                     case KOpen:
                     {
                         c.Leader = m.Sender;
+                        c.Payer = 0;
                         c.NpcName = r.ReadString();
                         c.Pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
                         if (!c.Members.Contains(m.Sender)) c.Members.Add(m.Sender);
@@ -208,8 +217,10 @@ namespace GedoniaCoop
                     case KDecide:
                     {
                         int option = r.ReadInt32();
+                        int payer = r.ReadInt32();
+                        if (payer != 0) c.Payer = payer;
                         c.Votes.Clear(); c.FirstVoteAt = -1f;
-                        if (mine == c) Execute(option, false, m.Sender);
+                        if (mine == c) Execute(option, false, m.Sender, payer);
                         break;
                     }
                     case KEligible:
@@ -374,13 +385,34 @@ namespace GedoniaCoop
             Decisions++;
             Plugin.Log.LogInfo(Plugin.Stamp() + " Dialogue: answer " + chosen + " chosen at '" + c.NpcName + "' (" + why + ")");
             int opt = chosen;
-            Send(KDecide, c.Npc, w => w.Write(opt));
-            Execute(chosen, true, Me);
+            int payer = Payer(c, chosen);
+            if (payer != 0) Plugin.Log.LogInfo(Plugin.Stamp() + " Dialogue: answer " + chosen + (Costs(myNpc, chosen) ? " costs money/items; " : " follows a paid answer; ") + NameOf(payer) + " pays");
+            Send(KDecide, c.Npc, w => { w.Write(opt); w.Write(payer); });
+            Execute(chosen, true, Me, payer);
+        }
+
+        // The member who pays for an answer with money/item requirements: the
+        // leader if they have it, else the first member who has. 0 = no cost.
+        int Payer(Conv c, int option)
+        {
+            if (myNpc == null || option >= myNpc.allDialogue.Length || !Costs(myNpc, option)) return c.Payer;
+            c.Payer = c.Leader;
+            if ((MemberEligibility(c, c.Leader, option) & 2) == 0)
+                foreach (int m in c.Members) if ((MemberEligibility(c, m, option) & 2) != 0) { c.Payer = m; break; }
+            return c.Payer;
+        }
+
+        static bool Costs(DialogueNPCModule d, int option)
+        {
+            if (d == null || d.allDialogue == null || option < 0 || option >= d.allDialogue.Length) return false;
+            foreach (answerRequirement q in d.allDialogue[option].requirements ?? new answerRequirement[0])
+                if (q.type == answerReqType.Money || q.type == answerReqType.Item) return true;
+            return false;
         }
 
         // Runs the chosen answer here with the game's own code. Requirements were
         // checked for the group, so the local check is lifted for this one call.
-        void Execute(int option, bool leader, int from)
+        void Execute(int option, bool leader, int from, int payer)
         {
             InterfaceManager im = InterfaceManager.instance;
             DialogueNPCModule d = myNpc;
@@ -396,6 +428,7 @@ namespace GedoniaCoop
             }
             answerRequirement[] reqs = d.allDialogue[option].requirements;
             deciding = true;
+            decidedPayer = payer;
             SuppressStory = !leader;
             try
             {
@@ -407,6 +440,7 @@ namespace GedoniaCoop
             {
                 d.allDialogue[option].requirements = reqs;
                 deciding = false;
+                decidedPayer = 0;
                 SuppressStory = false;
             }
             Plugin.Log.LogInfo(Plugin.Stamp() + " Dialogue: ran answer " + option + (leader ? " (leader)" : " (chosen by " + NameOf(from) + ")"));
@@ -469,18 +503,23 @@ namespace GedoniaCoop
             return false;
         }
 
+        byte MemberEligibility(Conv c, int m, int option)
+        {
+            byte e;
+            Dictionary<int, byte> per;
+            if (m == Me) return myNpc != null && option < myNpc.allDialogue.Length ? LocalEligibility(myNpc, option) : (byte)3;
+            if (c.Elig.TryGetValue(m, out per) && per.TryGetValue(option, out e)) return e;
+            return 0; // not reported yet: counts for nothing
+        }
+
         bool GroupEligible(Conv c, int option)
         {
-            bool stats = false, res = true;
+            bool stats = false, res = false;
             foreach (int m in c.Members)
             {
-                byte e;
-                Dictionary<int, byte> per;
-                if (m == Me) e = myNpc != null && option < myNpc.allDialogue.Length ? LocalEligibility(myNpc, option) : (byte)3;
-                else if (c.Elig.TryGetValue(m, out per) && per.TryGetValue(option, out e)) { }
-                else e = 2; // not reported yet: counts for no stats, blocks no money
+                byte e = MemberEligibility(c, m, option);
                 if ((e & 1) != 0) stats = true;
-                if ((e & 2) == 0) res = false;
+                if ((e & 2) != 0) res = true;
             }
             return stats && res;
         }
@@ -665,10 +704,26 @@ namespace GedoniaCoop
         {
             static bool Prefix(GameObject go)
             {
+                AnswerPayer = 0;
                 if (Instance == null || go == null) return true;
-                try { return Instance.OnAnswer(go); }
-                catch (Exception e) { Plugin.Log.LogError("Dialogue vote failed: " + e); return true; }
+                bool run = true;
+                try { run = Instance.OnAnswer(go); }
+                catch (Exception e) { Plugin.Log.LogError("Dialogue vote failed: " + e); }
+                if (!run) return false;
+                // Answered by one player: they pay. Chosen by a conversation: its payer.
+                int option;
+                GameObject target = InterfaceManager.instance != null ? InterfaceManager.instance.currentTalkTarget : null;
+                if (target != soloTarget) { soloTarget = target; soloPaid = false; }
+                if (deciding) AnswerPayer = decidedPayer;
+                else if (soloPaid || (int.TryParse(go.name, out option) && target != null && Costs(target.GetComponent<DialogueNPCModule>(), option)))
+                {
+                    AnswerPayer = Instance.Me;
+                    soloPaid = true;
+                }
+                return true;
             }
+
+            static void Postfix() { AnswerPayer = 0; }
         }
 
         [HarmonyPatch(typeof(InterfaceManager), "ExitDialogue")]
@@ -677,6 +732,8 @@ namespace GedoniaCoop
             static void Postfix()
             {
                 if (Instance == null || deciding) return;
+                soloTarget = null;
+                soloPaid = false;
                 try { Instance.OnExit(); }
                 catch (Exception e) { Plugin.Log.LogError("Dialogue exit failed: " + e); }
             }

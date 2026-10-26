@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.6.1). Tested with Steam build 16727998.
+Status: **playable alpha** (0.7.1). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -12,13 +12,21 @@ No game files are included; you need your own copy of the game.
 ## What is shared
 
 - **Players:** your real character model, animations, looks and gear, weapons, arrows and spells,
-  Steam name above the head, markers on world map, minimap and compass, sounds (steps, swings, hits).
+  spell and combat effects (healing, elements, weapon trails), transformations (werewolf, blood demon,
+  elemental forms), Steam name above the head, markers on world map, minimap and compass, sounds
+  (steps, swings, hits).
 - **Enemies:** the same enemies for everyone, one owner per enemy (hand-over when players split up),
-  hits from everyone count, everyone gets the XP and their own loot.
+  hits from everyone count.
+- **Experience:** combat XP is shared - everyone within 100 m in the same world gets exactly the
+  points of the kill, so players level at the same pace.
+- **Loot:** every player has their own; a body stays for you until you have looted it.
 - **Story:** the host's story counts. Dialogue answers and other story calls are run on every machine
   in the host's order; quests are repaired if a player falls behind; late joiners catch up.
 - **Shared conversations:** players near an NPC can join a conversation (F) and vote on answers.
-  An answer with a stat check (e.g. charisma 4) is open if one of the group meets it.
+  An answer with a stat check (e.g. charisma 4) is open if one of the group meets it; gold or item
+  costs (e.g. a rope) need only one of you to have them, and only one pays.
+- **Cutscenes:** watched together - each player holds the interaction key (F) until a ring fills,
+  the cutscene starts once everyone is ready. In a cutscene you see only your own character.
 - **World:** chests, ore and herbs (taken once for all), world events, expeditions including their
   generated dungeons, travelling merchants and bards, time of day and weather, companions and summons,
   the Northern Kingdoms.
@@ -80,9 +88,9 @@ plugin stays English and shows no "Deutsch" button.
 
 - Steam overlay invites may not open when the game is started outside Steam; the in-game friend
   list (co-op menu) works instead.
-- Story cutscenes and story teleports affect every player.
+- Story teleports affect every player.
 - Arena, Survival and Dungeon mode (separate main menu modes) are not tuned for co-op.
-- Sounds of effects that only exist as visuals on one machine can be missing for the others.
+- Companions of other players stay visible in a cutscene.
 
 ## License
 

@@ -71,12 +71,17 @@ Firewall & network protection > "Allow an app through firewall" > tick Gedonia u
 WHAT IS SHARED
 --------------
 - You see each other with your looks, gear, weapons, arrows and spells, and your Steam name
-  above your head.
+  above your head - also the others' spell and combat effects (healing, elements, weapon
+  trails).
 - Maps: on the world map (M), minimap and compass the others are a blue arrow with their
   name. If someone is far away, the arrow at the edge points their way.
   Someone in a dungeon is shown grey at the last place outside.
-- Enemies: the same enemies for everyone. Hits count for everyone, everyone gets the
-  experience, everyone has their own loot.
+- Enemies: the same enemies for everyone. Hits count for everyone.
+- Combat experience is shared: whoever is within 100 m in the same world gets exactly the
+  points of the player where the enemy dies. So you level at the same pace (a gap from
+  before stays).
+- Loot: everyone has their own. Everyone can loot every body once; it stays for you until
+  YOU have looted it.
 - Quests and dialogues: the result counts for everyone. When a quest is handed in, everyone
   gets the full reward.
 - Shared conversations: when someone talks to an NPC, the others nearby get a note. Walk to
@@ -87,7 +92,9 @@ WHAT IS SHARED
       Change it in <Gedonia folder>\BepInEx\config\gedonia.coop.cfg, section
       [Dialogue], VoteSeconds (0 = only when you all agree).
     * An answer with a requirement (e.g. charisma 4) can be chosen if ONE of you meets it.
-      Gold and items EVERYONE must have (the story takes them from everyone).
+      The same goes for gold and items (e.g. a rope): one of you having it is enough, and
+      only ONE pays - whoever started the conversation, else the first who has it.
+      Hired mercenaries go to whoever paid.
     * Whoever leaves the conversation is out; the others go on.
   Talking alone works as always.
 - Chests, ore, herbs: what one takes is gone for the others.
@@ -99,6 +106,12 @@ WHAT IS SHARED
   together.
 - Everyone sees the companions and summons.
 - The pause menu (Esc) does not pause the game in co-op - the world goes on for the others.
+- Cutscenes are watched together: when one begins, everyone sees "A cutscene is about to
+  start" at the top with a ring. When ready, hold F until the ring is full (1.5 seconds;
+  letting go earlier starts over) - it turns green. It starts only once ALL are ready (there
+  is no time limit). While the question is open, F doesn't talk or loot. In the cutscene
+  you see only your own character.
+- Transformations (werewolf, blood demon, elemental forms) are seen by the others.
 
 
 DYING IN CO-OP
@@ -134,8 +147,7 @@ KNOWN LIMITS (test version)
 - The "Uncharted Islands" cannot be reached in this game version.
 - Arena, Survival and Dungeon mode (separate modes in the main menu) are not tuned for co-op -
   play the normal game ("Campaign / open world").
-- Cutscenes and teleports from the story affect both players.
-- Sounds of spell/effect visuals may be missing for the others.
+- Teleports from the story affect both players.
 
 
 PROBLEMS?

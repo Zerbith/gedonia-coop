@@ -78,12 +78,17 @@ Windows-Sicherheit > Firewall- & Netzwerkschutz > "Zugriff von App durch Firewal
 
 WAS GEMEINSAM IST
 -----------------
-- Ihr seht euch mit eurem Aussehen, eurer Ausruestung, Waffen, Pfeilen und Zaubern.
+- Ihr seht euch mit eurem Aussehen, eurer Ausruestung, Waffen, Pfeilen und Zaubern -
+  auch Zauber- und Kampfeffekte (Heilung, Elemente, Waffenspuren) der anderen.
 - Karte: auf Weltkarte (M), Minikarte und Kompass seht ihr die anderen als blauen Pfeil
   mit Namen. Ist jemand weit weg, zeigt der Pfeil am Rand in seine Richtung.
   Ist jemand in einem Dungeon, steht er grau am letzten Ort draussen.
-- Gegner: dieselben Gegner fuer alle. Treffer zaehlen fuer alle, Erfahrung bekommt jeder,
-  jeder hat seine eigene Beute.
+- Gegner: dieselben Gegner fuer alle. Treffer zaehlen fuer alle.
+- Erfahrung aus Kaempfen ist geteilt: Wer bis 100 m entfernt in derselben Welt ist, bekommt
+  genau dieselben Punkte wie der, bei dem der Gegner stirbt. So steigt ihr gleich schnell
+  auf (ein Abstand von vorher bleibt).
+- Beute: jeder hat seine eigene. Jeder kann jede Leiche einmal selbst pluendern; sie bleibt
+  bei dir liegen, bis DU sie gepluendert hast.
 - Quests und Dialoge: das Ergebnis gilt fuer alle. Bei Quest-Abgabe bekommt jeder die
   volle Belohnung.
 - Gemeinsame Gespraeche: Spricht einer mit jemandem, sehen die anderen in der Naehe einen
@@ -94,7 +99,9 @@ WAS GEMEINSAM IST
       Einstellbar in <Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt
       [Dialogue], VoteSeconds (0 = nur wenn ihr euch einig seid).
     * Eine Antwort mit Bedingung (z. B. Charisma 4) ist waehlbar, wenn EINER von euch sie
-      erfuellt. Gold und Gegenstaende muss JEDER haben (die Story zieht sie bei allen ab).
+      erfuellt. Das gilt auch fuer Gold und Gegenstaende (z. B. ein Seil): es reicht, wenn
+      einer sie hat, und nur EINER bezahlt - wer das Gespraech begonnen hat, sonst der
+      Erste, der es hat. Angeworbene Soeldner gehen an den, der bezahlt hat.
     * Wer das Gespraech verlaesst, ist raus; die anderen reden weiter.
   Wer allein redet, redet wie immer.
 - Truhen, Erz, Kraeuter: was einer nimmt, ist beim anderen weg.
@@ -107,6 +114,13 @@ WAS GEMEINSAM IST
   hoert jeder an der richtigen Stelle.
 - Ueber den Koepfen und auf der Karte steht euer Steam-Name.
 - Das Pausenmenue (Esc) haelt das Spiel im Co-op nicht an - die Welt laeuft fuer die anderen weiter.
+- Zwischensequenzen schaut ihr gemeinsam: Beginnt eine, erscheint bei allen oben der Hinweis
+  "Eine Zwischensequenz beginnt gleich" mit einem Kreis. Wer bereit ist, haelt F gedrueckt,
+  bis der Kreis voll ist (1,5 Sekunden; loslassen vorher = von vorn), dann wird er gruen.
+  Die Sequenz startet erst, wenn ALLE bereit sind (es wird ohne Zeitlimit gewartet).
+  Solange die Frage offen ist, spricht/pluendert F nicht. In der Sequenz seht ihr nur euren
+  eigenen Charakter.
+- Verwandlungen (Werwolf, Blutdaemon, Elementargestalten) sehen die anderen mit.
 
 STERBEN IM CO-OP
 ----------------
@@ -134,9 +148,8 @@ BEKANNTE GRENZEN (Testversion)
 - Die "Unerforschten Inseln" sind in dieser Spielversion nicht erreichbar.
 - Arena, Survival-Modus und Dungeon-Modus (eigene Spielmodi im Hauptmenue) sind nicht
   fuer Co-op abgestimmt - spielt im normalen Spiel ("Kampagne / offene Welt").
-- Zwischensequenzen und Teleports aus der Story betreffen beide Spieler.
+- Teleports aus der Story betreffen beide Spieler.
 - Die deutsche Sprachausgabe gibt es (noch) nicht; vertont bleibt alles wie im Original.
-- Klang von Zaubern/Effekten, die nur als Bild erscheinen, kann bei den anderen fehlen.
 
 
 PROBLEME?

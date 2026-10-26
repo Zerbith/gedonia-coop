@@ -10,7 +10,7 @@
 #                           stands still and owns the enemies near both of them
 #   -ClientDelay <s>        start the friend this many seconds after the host
 param([switch]$Stop, [ValidateSet('udp', 'steam-mock')] [string]$Transport = 'udp',
-      [ValidateSet('walk', 'fight', 'story', 'loot', 'clock', 'apart', 'lossy', 'death', 'companions', 'event', 'latejoin', 'farloot', 'chestgold', 'chestlid', 'looks', 'bow', 'ui', 'worlds', 'dungeon', 'expedition', 'expfull', 'eventhandover', 'summons', 'restpoints', 'survey', 'menu', 'german', 'map', 'lan', 'respawn', 'respawnnorth', 'travellers', 'pause', 'dialogue')] [string]$Scenario = 'walk',
+      [ValidateSet('walk', 'fight', 'story', 'loot', 'clock', 'apart', 'lossy', 'death', 'companions', 'event', 'latejoin', 'farloot', 'chestgold', 'chestlid', 'looks', 'bow', 'ui', 'worlds', 'dungeon', 'expedition', 'expfull', 'eventhandover', 'summons', 'restpoints', 'survey', 'menu', 'german', 'map', 'lan', 'respawn', 'respawnnorth', 'travellers', 'pause', 'dialogue', 'effects')] [string]$Scenario = 'walk',
       [int]$ClientDelay = 3, [string]$ExpPattern = '*|*|*',
       [string]$DialogSteps = 'dialogsurvey@15,gotovillage:Weystane@18,dialogsurvey@30', [string]$DialogClientSteps = 'none@999')
 $root = Split-Path -Parent $PSScriptRoot
@@ -99,6 +99,7 @@ if ($Transport -eq 'udp') {
 # loot: the friend opens the nearest chest, takes one item, then the rest; the
 # host tries to open the same chest in between and must be turned away.
 $hostTest = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogSteps" }
+            elseif ($Scenario -eq 'effects') { '-coop-test-regen 1 -coop-test-story intellect:2@14,xplog@15,effect:33@25,effect:7on@28,shot:effects@29,effectstate@30,shot:fight1@50,shot:fight2@52,xplog@60,bodies@85,lootbody@88,bodies@92,xplog@100,effectstate@100' }
             elseif ($Scenario -eq 'pause') { '-coop-test-story pause@15,timescale@17,timescale@19,unpause@20,timescale@22' }
             elseif ($Scenario -eq 'travellers') { '-coop-test-story travellers@12,gototraveller:15@15,travellers@30,shot:bard@40,travellers@50,gotopos:486;15;474@60,travellers@90,gototraveller:15@100,travellers@110,shot:bardback@112' }
             elseif ($Scenario -eq 'story') { '-coop-test-story answer:TakeProtectTownQuest@36,answer:TakeHorseQuest@45,unsynced:Lost_knowledge@55' }
@@ -129,6 +130,7 @@ $hostTest = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogSteps" }
 $h = Start-Process "$root\game\Gedonia.exe" -WorkingDirectory "$root\game" -PassThru -ArgumentList "$w $hostNet -coop-name Host $common -coop-dump 1 $hostTest"
 Start-Sleep $ClientDelay
 $clientBot = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogClientSteps" }
+             elseif ($Scenario -eq 'effects') { '-coop-bot fight -coop-bot-delay 36 -coop-test-regen 1 -coop-test-strong 10 -coop-test-story intellect:8@14,xplog@15,shot:hosteffect@27,effectstate@28,effect:slash@32,effect:5@34,xplog@60,bodies@80,bodies@96,lootbody@98,bodies@100,xplog@100,effectstate@100' }
              elseif ($Scenario -eq 'pause') { '-coop-bot circle -coop-test-story pause@30,timescale@32,shot:pause@33,timescale@40,unpause@45,timescale@47' }
              elseif ($Scenario -eq 'travellers') { '-coop-test-story travellershift@8,travellers@12,gototraveller:15@20,travellers@30,shot:bard@40,travellers@50,travellers@90,travellers@110,shot:bardback@112' }
              elseif ($Scenario -eq 'fight') { '-coop-bot fight -coop-test-regen 1' }

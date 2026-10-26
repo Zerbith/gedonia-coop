@@ -236,11 +236,15 @@ namespace GedoniaCoop
             const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
             foreach (FieldInfo f in t.GetFields(all))
             {
-                if (f.Name.EndsWith("Rus") || f.Name.EndsWith("Russian"))
+                // Twins: xRus / xRussian, and russianX / rusX (Tooltip.russianText,
+                // Tooltip.rusNameOfItem - the skill tree's hover texts).
+                string en = f.Name.EndsWith("Rus") ? f.Name.Substring(0, f.Name.Length - 3) : f.Name.EndsWith("Russian") ? f.Name.Substring(0, f.Name.Length - 7)
+                    : f.Name.StartsWith("russian") && f.Name.Length > 7 ? char.ToLowerInvariant(f.Name[7]) + f.Name.Substring(8)
+                    : f.Name.StartsWith("rus") && f.Name.Length > 3 && char.IsUpper(f.Name[3]) ? char.ToLowerInvariant(f.Name[3]) + f.Name.Substring(4) : null;
+                if (en != null && en.Length > 0)
                 {
-                    string en = f.Name.EndsWith("Rus") ? f.Name.Substring(0, f.Name.Length - 3) : f.Name.Substring(0, f.Name.Length - 7);
                     FieldInfo e = t.GetField(en, all) ?? t.GetField(en + "Eng", all);
-                    if (e != null && (e.FieldType == typeof(string) || e.FieldType == typeof(string[]) || e.FieldType == typeof(List<string>))) list.Add(e);
+                    if (e != null && !list.Contains(e) && (e.FieldType == typeof(string) || e.FieldType == typeof(string[]) || e.FieldType == typeof(List<string>))) list.Add(e);
                 }
                 else
                 {

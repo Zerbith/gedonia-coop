@@ -58,7 +58,7 @@ namespace GedoniaCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "gedonia.coop";
-        public const string Version = "0.6.1";
+        public const string Version = "0.7.1";
         const float SendInterval = 0.05f;
         const float AppearanceInterval = 1f;
         const float PeerTimeout = 5f;
@@ -84,6 +84,14 @@ namespace GedoniaCoop
         DialogueSync dialogue;
         Net dialogueNet;
         Net soundsNet;
+        XpSync xp;
+        Net xpNet;
+        EffectSync effects;
+        Net effectsNet;
+        CutsceneSync cutscenes;
+        Net cutscenesNet;
+        FormSync forms;
+        Net formsNet;
         Net travellersNet;
         ProjectileSync projectiles;
         readonly RespawnStones respawn = new RespawnStones();
@@ -133,6 +141,13 @@ namespace GedoniaCoop
             if (self == null || !self.puppets.TryGetValue(playerId, out p)) return false;
             pos = p.Position;
             return true;
+        }
+
+        string PuppetsVisible()
+        {
+            int n = 0;
+            foreach (Puppet p in puppets.Values) if (p.Visible) n++;
+            return n + "/" + puppets.Count;
         }
 
         public static bool SameWorld(int playerId)
@@ -229,6 +244,8 @@ namespace GedoniaCoop
             testReloadAfter = ParseFloat(Arg(args, "-coop-test-reload"), -1f);
             int.TryParse(Arg(args, "-coop-test-hp") ?? "0", out testHp);
             if (!int.TryParse(Arg(args, "-coop-test-charisma") ?? "-1", out testCharisma)) testCharisma = -1;
+            RespawnStones.SettleSeconds = ParseFloat(Arg(args, "-coop-test-crystalwait"), 3f);
+            RespawnStones.Survey = Arg(args, "-coop-test-crystalsurvey") != null;
             testStrong = ParseFloat(Arg(args, "-coop-test-strong"), 0f);
             UdpTransport.SimulatedLoss = ParseFloat(Arg(args, "-coop-udp-loss"), 0f);
             if (UdpTransport.SimulatedLoss > 0f) Log.LogWarning("Test: dropping " + (UdpTransport.SimulatedLoss * 100f).ToString("F0") + "% of all UDP packets on send");
@@ -562,6 +579,7 @@ namespace GedoniaCoop
                 text = "<color=#ff8060><b>" + Lang.T("A player has a different mod version (protocol " + net.OtherVersion + ", ours " + Net.ProtocolVersion + "); everyone needs the same version.",
                     "Ein Spieler hat eine andere Mod-Version (Protokoll " + net.OtherVersion + ", unseres " + Net.ProtocolVersion + "); alle brauchen dieselbe Version.") + "</b></color>";
             ui.Draw(steamTransport, text, coopUi);
+            CutsceneSync.DrawRing();
         }
 
         // Test-only expedition steps:
@@ -1148,7 +1166,7 @@ namespace GedoniaCoop
                 Appearance look;
                 if (looks.TryGetValue(p.Id, out look)) p.Look = look;
                 bool sameWorld = inWorld && p.Latest.Scene == local.Scene && p.Latest.World == local.World;
-                p.SetVisible(sameWorld);
+                p.SetVisible(sameWorld && !CutsceneSync.PlayingNow && !FormSync.Transformed(p.Id)); // in a cutscene only your own character is seen
                 if (sameWorld) p.Tick(Time.deltaTime, now);
             }
             if (gone != null)
@@ -1212,6 +1230,30 @@ namespace GedoniaCoop
                 sounds = new SoundSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) ? pp : null; }, () => puppets.Keys);
             }
             sounds.Tick(now);
+            if (xp == null || xpNet != net)
+            {
+                xpNet = net;
+                xp = new XpSync(net, () => puppets.Keys);
+            }
+            xp.Tick();
+            if (effects == null || effectsNet != net)
+            {
+                effectsNet = net;
+                effects = new EffectSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) ? pp : null; }, () => puppets.Keys);
+            }
+            effects.Tick(now);
+            if (cutscenes == null || cutscenesNet != net)
+            {
+                cutscenesNet = net;
+                cutscenes = new CutsceneSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) && pp.Latest != null ? pp.Latest.Name : null; }, () => puppets.Keys);
+            }
+            cutscenes.Tick(now);
+            if (forms == null || formsNet != net)
+            {
+                formsNet = net;
+                forms = new FormSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) ? pp : null; }, () => puppets.Keys);
+            }
+            forms.Tick(now);
             if (dialogue == null || dialogueNet != net)
             {
                 dialogueNet = net;
@@ -1399,7 +1441,7 @@ namespace GedoniaCoop
                             {
                                 try
                                 {
-                                    if (z == null || z.nameofZone != step.Substring(12)) continue;
+                                    if (z == null || z.nameofZone != step.Substring(12).Replace("_", " ")) continue;
                                     Collider zc = z.GetComponent<Collider>();
                                     if (zc == null) continue;
                                     Vector3 c = zc.bounds.center;
@@ -1454,6 +1496,95 @@ namespace GedoniaCoop
                     else if (step.StartsWith("voteopt:")) DialogueSync.TestVoteAnswer(int.Parse(step.Substring(8)));
                     else if (step == "dialogstate") Log.LogInfo(Stamp() + " [dialog] " + (dialogue != null ? dialogue.Describe() : "-"));
                     else if (step == "leavedialog") InterfaceManager.instance.ExitDialogue();
+                    else if (step.StartsWith("gold:")) { Log.LogInfo(Stamp() + " Test: gold " + player.gold + " -> " + step.Substring(5)); player.gold = int.Parse(step.Substring(5)); }
+                    else if (step == "effectsdump")
+                    {
+                        // Survey: the player's effect prefabs and their scripts.
+                        Dictionary<string, int> types = new Dictionary<string, int>();
+                        for (int k = 0; k < player.effectsGos.Length; k++)
+                        {
+                            GameObject e = player.effectsGos[k];
+                            if (e == null) { Log.LogInfo("[effect] " + k + " null"); continue; }
+                            List<string> mbs = new List<string>();
+                            foreach (MonoBehaviour mb in e.GetComponentsInChildren<MonoBehaviour>(true))
+                            {
+                                if (mb == null) continue;
+                                string t = mb.GetType().Name;
+                                if (!mbs.Contains(t)) mbs.Add(t);
+                                int c; types.TryGetValue(t, out c); types[t] = c + 1;
+                            }
+                            Log.LogInfo("[effect] " + k + " '" + e.name + "' scripts=" + string.Join(",", mbs.ToArray()) + " colliders=" + e.GetComponentsInChildren<Collider>(true).Length +
+                                " particles=" + e.GetComponentsInChildren<ParticleSystem>(true).Length + " audio=" + e.GetComponentsInChildren<AudioSource>(true).Length);
+                        }
+                        foreach (KeyValuePair<string, int> kv in types) Log.LogInfo("[effecttype] " + kv.Key + " x" + kv.Value);
+                    }
+                    else if (step.StartsWith("tooltip:"))
+                    {
+                        // Test-only: hover the n-th open tooltip with a text (skill tree) and log what shows.
+                        List<Tooltip> tips = new List<Tooltip>();
+                        foreach (Tooltip t in UnityEngine.Object.FindObjectsOfType<Tooltip>())
+                            if (t.gameObject.activeInHierarchy && !string.IsNullOrEmpty(t.text) && t.tooltipLabel != null) tips.Add(t);
+                        tips.Sort((a, b) => string.CompareOrdinal(LocalPlayer.Path(a.transform, null), LocalPlayer.Path(b.transform, null)));
+                        int n = int.Parse(step.Substring(8));
+                        if (n >= tips.Count) Log.LogWarning("Test: only " + tips.Count + " tooltips open");
+                        else
+                        {
+                            tips[n].EnterButton();
+                            Transform nm = tips[n].tooltipLabel.transform.Find("name");
+                            Log.LogInfo(Stamp() + " [tooltip] " + n + "/" + tips.Count + " '" + (nm != null ? nm.GetComponent<UILabel>().text : "") + "': " + tips[n].tooltipLabel.text.Replace("\n", "\\n"));
+                        }
+                    }
+                    else if (step.StartsWith("cutscene:"))
+                    {
+                        // Test-only: what a story function does: instantiate a cutscene and start it.
+                        GameObject proto = Resources.Load<GameObject>(step.Substring(9));
+                        if (proto == null) Log.LogWarning("Test: no cutscene " + step.Substring(9));
+                        else
+                        {
+                            GameObject cs = UnityEngine.Object.Instantiate(proto, player.transform.position, Quaternion.identity);
+                            TimelineCutsceneController tc = cs.GetComponent<TimelineCutsceneController>();
+                            Log.LogInfo(Stamp() + " Test: cutscene '" + cs.name + "' exit='" + (tc != null ? tc.exitMessage : "-") + "' duration=" + (tc != null ? tc.cutsceneDuration : 0f));
+                            if (tc != null) tc.StartCutscene();
+                        }
+                    }
+                    else if (step == "lootbody" || step == "bodies")
+                    {
+                        // Test-only: loot the nearest dead enemy like pressing F on it (take all),
+                        // or list the dead bodies nearby.
+                        NPC best = null;
+                        string list = "";
+                        foreach (NPC n in UnityEngine.Object.FindObjectsOfType<NPC>())
+                        {
+                            if (!n.isDead || n.GetComponent<FighterNPCModule>() == null) continue;
+                            float d = Vector3.Distance(n.transform.position, player.transform.position);
+                            if (d > 80f) continue;
+                            SaveableItem si = n.GetComponent<SaveableItem>();
+                            list += " '" + n.npcName + "'(save " + (si != null ? si.instanceID : 0) + ", loot " + n.loot.Count + ", " + d.ToString("F0") + " m)";
+                            if (n.loot.Count > 0 && (best == null || d < Vector3.Distance(best.transform.position, player.transform.position))) best = n;
+                        }
+                        if (step == "bodies") Log.LogInfo(Stamp() + " [bodies]" + (list.Length > 0 ? list : " none"));
+                        else if (best == null) Log.LogWarning("Test: no body with loot near");
+                        else
+                        {
+                            Log.LogInfo(Stamp() + " Test: looting '" + best.npcName + "' (" + best.loot.Count + " items)");
+                            GameManager.instance.currentOpenedLoot = best.loot;
+                            GameManager.instance.lootedTarget = best.gameObject;
+                            InterfaceManager.instance.lootWindow.SetActive(true);
+                            InterfaceManager.instance.currentLootPage = 0;
+                            InterfaceManager.instance.RefreshLootWIndow();
+                            InterfaceManager.instance.TakeAllLoot();
+                        }
+                    }
+                    else if (step.StartsWith("form:")) FormSync.TestTransform(player, int.Parse(step.Substring(5)));
+                    else if (step == "formstate") Log.LogInfo(Stamp() + " [form] " + (forms != null ? forms.Describe() : "-") + " puppetsVisible=" + PuppetsVisible());
+                    else if (step.StartsWith("cuthold:")) { float s = ParseFloat(step.Substring(8), 2f); Log.LogInfo(Stamp() + " Test: holding F for " + s + " s"); CutsceneSync.TestHoldUntil = Time.realtimeSinceStartup + s; }
+                    else if (step == "cutready") { Log.LogInfo(Stamp() + " Test: confirming the cutscene"); CutsceneSync.TestConfirm(); }
+                    else if (step == "cutstate") Log.LogInfo(Stamp() + " [cutscene] " + (cutscenes != null ? cutscenes.Describe() : "-") + " hold=" + CutsceneSync.Hold.ToString("F2") + " puppetsVisible=" + PuppetsVisible() + " playerActive=" + player.gameObject.activeSelf);
+                    else if (step.StartsWith("effect:")) EffectSync.TestEffect(player, step.Substring(7));
+                    else if (step == "effectstate") Log.LogInfo(Stamp() + " [effects] " + (effects != null ? effects.Describe() : "-"));
+                    else if (step == "xplog") Log.LogInfo(Stamp() + " [xp] level " + player.level + " " + player.experience + "/" + player.levelingTable[player.level] + " int=" + player.intellectBasic + (xp != null ? " " + xp.Summary() : ""));
+                    else if (step.StartsWith("intellect:")) { Log.LogInfo(Stamp() + " Test: intellect " + player.intellectBasic + " -> " + step.Substring(10)); player.intellectBasic = int.Parse(step.Substring(10)); }
+                    else if (step == "goldlog") Log.LogInfo(Stamp() + " [gold] " + player.gold + " inventory=" + player.inventory.Count + (story != null ? " paymentsSkipped=" + story.PaymentsSkipped : ""));
                     else if (step == "pause") InterfaceManager.instance.OpenPauseMenu();
                     else if (step == "unpause") InterfaceManager.instance.ClosePauseMenu();
                     else if (step == "timescale") Log.LogInfo(Stamp() + " [pause] timeScale=" + Time.timeScale + " pauseMenu=" + InterfaceManager.instance.panels[13].activeSelf + " peers=" + puppets.Count + " skipped=" + PausesSkipped + " clock " + WorldClockSync.Describe() + " pos=" + player.transform.position.ToString("F1"));
@@ -1869,7 +2000,7 @@ namespace GedoniaCoop
                 " peers=" + puppets.Count + " tx=" + net.Sent + " rx=" + net.Received + " drop=" + net.Dropped +
                 (enemies != null ? " " + enemies.OwnedSummary() : "") + (events != null ? " " + events.Summary() : "") +
                 (story != null ? " " + story.Summary() : "") + (worldState != null ? " " + worldState.Summary() : "") +
-                (loot != null ? " " + loot.Summary() : "") + (clock != null ? " " + clock.Summary() : "") + (travellers != null ? " " + travellers.Summary() : "") + (sounds != null ? " " + sounds.Summary() : "") + (dialogue != null ? " " + dialogue.Summary() : "") + " " + ProjectileSync.Summary() + (expeditions != null ? " " + expeditions.Summary() : "") + " " + respawn.Summary() +
+                (loot != null ? " " + loot.Summary() : "") + (clock != null ? " " + clock.Summary() : "") + (travellers != null ? " " + travellers.Summary() : "") + (sounds != null ? " " + sounds.Summary() : "") + (xp != null ? " " + xp.Summary() : "") + (effects != null ? " " + effects.Summary() : "") + (cutscenes != null ? " " + cutscenes.Summary() : "") + (forms != null ? " " + forms.Summary() : "") + (dialogue != null ? " " + dialogue.Summary() : "") + " " + ProjectileSync.Summary() + (expeditions != null ? " " + expeditions.Summary() : "") + " " + respawn.Summary() +
                 (net.Transport is UdpTransport ? " " + ((UdpTransport)net.Transport).Stats : "");
             foreach (Puppet p in puppets.Values)
             {

@@ -63,7 +63,7 @@ namespace GedoniaCoop
     public class Net : IDisposable
     {
         const ushort Magic = 0x4743; // "GC"
-        const byte Version = 13;
+        const byte Version = 15;
         public const byte ProtocolVersion = Version;
         const byte MsgState = 1;
         const byte MsgAppearance = 2;
@@ -76,7 +76,7 @@ namespace GedoniaCoop
             MsgLootLock = 21, MsgLootGrant = 22, MsgLootRelease = 23, MsgLootTake = 24,
             MsgWorldClock = 25, MsgTimeSkip = 26, MsgActorRoster = 27,
             MsgEventState = 28, MsgEventSpawn = 29, MsgEventObjective = 30, MsgEventComplete = 31, MsgEventUse = 32,
-            MsgWorldState = 33, MsgProjectile = 34, MsgExpeditions = 35, MsgExpeditionStart = 36, MsgEventObject = 37, MsgEventObjSpawn = 38, MsgWorldStateRequest = 39, MsgTravellers = 40, MsgSounds = 41, MsgDialogue = 42;
+            MsgWorldState = 33, MsgProjectile = 34, MsgExpeditions = 35, MsgExpeditionStart = 36, MsgEventObject = 37, MsgEventObjSpawn = 38, MsgWorldStateRequest = 39, MsgTravellers = 40, MsgSounds = 41, MsgDialogue = 42, MsgXp = 43, MsgEffects = 44, MsgCutscene = 45, MsgForm = 46;
 
         public struct Message
         {

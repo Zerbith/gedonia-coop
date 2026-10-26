@@ -143,6 +143,8 @@ namespace GedoniaCoop
         public GameObject Root { get { return root; } }
         public bool Visible { get { return root.activeSelf; } }
         public bool HasModel { get { return model != null; } }
+        // The clone of our PlayerFinal: same paths as below PlayerScript.instance.transform.
+        public Transform ModelRoot { get { return model != null ? model.transform : null; } }
 
         public void SetVisible(bool visible)
         {
