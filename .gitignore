@@ -1,0 +1,13 @@
+# Game copies, builds and packages
+game/
+game2/
+build/
+dist/
+backups/
+decomp/
+downloads/
+local/
+# Translation tables hold the game's own texts
+src/GedoniaCoop/lang/
+*.es3
+*.log

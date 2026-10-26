@@ -1,0 +1,163 @@
+GEDONIA CO-OP  -  Version {VERSION}  (Testversion)
+==================================================
+
+Mit diesem Mod spielt ihr Gedonia (das erste, nicht Gedonia 2) zusammen - zu zweit oder
+zu mehreren. Zwei Wege:
+  - UEBER STEAM: Freunde einladen, auch uebers Internet. Keine Portfreigabe, keine IP-Adressen.
+  - IM HEIMNETZ (LAN): alle im selben Netzwerk (z. B. zu Hause am selben Router).
+    Laeuft direkt zwischen den PCs, ohne Steam-Server.
+
+Das ist eine Testversion. Bitte vorher die Hinweise zu den Spielstaenden lesen.
+
+
+VORAUSSETZUNGEN
+---------------
+- Jeder hat Gedonia auf Steam (getestet mit Steam-Build 16727998).
+- Alle haben DIESELBE Version dieses Mods ({VERSION}).
+- Ueber Steam: Steam laeuft und ihr seid auf Steam befreundet.
+- Im Heimnetz: alle PCs im selben Netzwerk.
+
+
+INSTALLIEREN
+------------
+1. Gedonia beenden.
+2. Den Ordner aus der ZIP-Datei irgendwohin entpacken (z. B. auf den Desktop).
+3. "Installieren.cmd" doppelklicken.
+   Der Installer
+     - findet Gedonia ueber Steam,
+     - sichert deine Spielstaende nach Dokumente\Gedonia-Coop-Backups,
+     - laedt den Mod-Loader BepInEx 5.4.23.5 von GitHub (Pruefsumme wird kontrolliert),
+     - kopiert den Mod und die deutschen Texte ins Spiel.
+   Windows fragt eventuell nach, ob die Datei ausgefuehrt werden darf: "Weitere Informationen"
+   und "Trotzdem ausfuehren".
+   Eine aeltere Version des Mods wird dabei einfach aktualisiert.
+4. Gedonia normal ueber Steam starten.
+
+Wird Gedonia nicht gefunden, den Installer in einer Eingabeaufforderung so starten:
+   Installieren.cmd -GameDir "D:\Pfad\zu\Gedonia"
+
+
+DEUTSCH
+-------
+Im Hauptmenue unten links gibt es neben "English" und "Russkij" jetzt "Deutsch".
+Damit ist das ganze Spiel auf Deutsch: Menues, Quests, Gegenstaende, Dialoge.
+Die Uebersetzung ist neu und noch nicht ueberall Korrektur gelesen. Was noch englisch
+erscheint, wird gesammelt in  <Gedonia-Ordner>\BepInEx\config\gedonia-coop-missing-de.txt
+- diese Datei gerne mitschicken.
+
+
+SO SPIELT IHR ZUSAMMEN
+----------------------
+Hauptmenue:
+  "Co-op hosten"     -> "Ueber Steam"  oder  "Im Heimnetz (LAN)" waehlen,
+                        danach wie gewohnt deinen Spielstand laden.
+  "Co-op beitreten"  -> zeigt Steam-Freunde, die gerade hosten, und Spiele im Heimnetz.
+                        "Beitreten" klicken, danach deinen Spielstand laden.
+                        Findet die Suche im Heimnetz nichts: die Adresse des Hosts eintippen
+                        (steht beim Host im Co-op-Menue, z. B. 192.168.0.20).
+
+Im Spiel: Co-op-Knopf rechts in der oberen Leiste (oder Taste F8):
+  - Status (verbunden? wie viele Spieler? deine Heimnetz-Adresse),
+  - "Freunde einladen" (Steam-Host): Freundesliste mit "Einladen".
+  - "Co-op verlassen".
+  - Wer noch nicht verbunden ist, kann hier auch hosten oder beitreten.
+Steam-Einladungen kann man auch im Steam-Chat oder mit F9 annehmen (F10 = ablehnen).
+
+Jeder spielt mit seinem EIGENEN Spielstand. Die Welt und die Geschichte des HOSTS gelten.
+
+
+IM HEIMNETZ (LAN) - WINDOWS-FIREWALL
+------------------------------------
+Beim ersten Hosten im Heimnetz fragt Windows, ob Gedonia im Netzwerk kommunizieren darf:
+"Private Netzwerke" erlauben. Ohne das kann niemand beitreten.
+Benutzt werden UDP-Port 7790 (Spiel) und 7791 (Suche im Heimnetz).
+Wurde die Frage versehentlich abgelehnt: Windows-Einstellungen > Datenschutz und Sicherheit >
+Windows-Sicherheit > Firewall- & Netzwerkschutz > "Zugriff von App durch Firewall zulassen"
+> Gedonia bei "Privat" ankreuzen.
+
+
+WAS GEMEINSAM IST
+-----------------
+- Ihr seht euch mit eurem Aussehen, eurer Ausruestung, Waffen, Pfeilen und Zaubern.
+- Karte: auf Weltkarte (M), Minikarte und Kompass seht ihr die anderen als blauen Pfeil
+  mit Namen. Ist jemand weit weg, zeigt der Pfeil am Rand in seine Richtung.
+  Ist jemand in einem Dungeon, steht er grau am letzten Ort draussen.
+- Gegner: dieselben Gegner fuer alle. Treffer zaehlen fuer alle, Erfahrung bekommt jeder,
+  jeder hat seine eigene Beute.
+- Quests und Dialoge: das Ergebnis gilt fuer alle. Bei Quest-Abgabe bekommt jeder die
+  volle Belohnung.
+- Gemeinsame Gespraeche: Spricht einer mit jemandem, sehen die anderen in der Naehe einen
+  Hinweis. Wer zum selben NPC geht und F drueckt, redet mit. Dann ist ein Klick auf eine
+  Antwort eine Stimme (die Stimmen stehen neben den Antworten):
+    * Seid ihr euch einig, gilt die Antwort sofort.
+    * Sonst gilt nach 10 Sekunden die Stimme dessen, der das Gespraech begonnen hat.
+      Einstellbar in <Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt
+      [Dialogue], VoteSeconds (0 = nur wenn ihr euch einig seid).
+    * Eine Antwort mit Bedingung (z. B. Charisma 4) ist waehlbar, wenn EINER von euch sie
+      erfuellt. Gold und Gegenstaende muss JEDER haben (die Story zieht sie bei allen ab).
+    * Wer das Gespraech verlaesst, ist raus; die anderen reden weiter.
+  Wer allein redet, redet wie immer.
+- Truhen, Erz, Kraeuter: was einer nimmt, ist beim anderen weg.
+- Tageszeit und Wetter sind bei allen gleich (vom Host). Schlaeft einer, schlafen alle.
+- Welt-Events, Expeditionen, Dungeons und die anderen Welten (Noerdliche Koenigreiche)
+  laufen gemeinsam.
+- Begleiter und Beschwoerungen sehen alle.
+- Reisende (Haendler, Barden, Weise, Schamanen) sind fuer alle am selben Ort (vom Host).
+- Geraeusche: Schritte, Schlaege, Treffer und Rufe der anderen Spieler und der Gegner
+  hoert jeder an der richtigen Stelle.
+- Ueber den Koepfen und auf der Karte steht euer Steam-Name.
+- Das Pausenmenue (Esc) haelt das Spiel im Co-op nicht an - die Welt laeuft fuer die anderen weiter.
+
+STERBEN IM CO-OP
+----------------
+In den Doerfern stehen leuchtende Wiederbelebungskristalle. Davor stehen, Kamera darauf
+richten und F druecken (wie beim Sprechen): dann ist man an ihn gebunden. Stirbt man im
+Co-op, steht man nach 10 Sekunden am zuletzt gebundenen Kristall wieder auf (ohne Kristall: dort, wo man in die Welt gekommen ist).
+Kristalle gibt es in Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, im
+Forscherlager sowie in Erynard, beim Eisenklan und bei den Soehnen des Donners.
+
+
+WICHTIG ZU DEN SPIELSTAENDEN
+----------------------------
+- Der Mod veraendert im Co-op deinen Spielstand (Quests vom Host, gemeinsame Truhen).
+  Am besten fuer Co-op einen EIGENEN Spielstand anlegen bzw. benutzen.
+- Der Installer sichert deine Spielstaende vorher nach Dokumente\Gedonia-Coop-Backups.
+  Zurueckholen: Gedonia beenden, Inhalt eines Backup-Ordners nach
+  %USERPROFILE%\AppData\LocalLow\Oleg Kazakov\Gedonia  kopieren.
+- Steam-Cloud synchronisiert Gedonia-Spielstaende. Ein zurueckgeholtes Backup also
+  bei laufendem Steam einspielen und danach das Spiel starten.
+
+
+BEKANNTE GRENZEN (Testversion)
+------------------------------
+- Ein Chat im Spiel kommt spaeter.
+- Die "Unerforschten Inseln" sind in dieser Spielversion nicht erreichbar.
+- Arena, Survival-Modus und Dungeon-Modus (eigene Spielmodi im Hauptmenue) sind nicht
+  fuer Co-op abgestimmt - spielt im normalen Spiel ("Kampagne / offene Welt").
+- Zwischensequenzen und Teleports aus der Story betreffen beide Spieler.
+- Die deutsche Sprachausgabe gibt es (noch) nicht; vertont bleibt alles wie im Original.
+- Klang von Zaubern/Effekten, die nur als Bild erscheinen, kann bei den anderen fehlen.
+
+
+PROBLEME?
+---------
+Bitte diese Datei an den schicken, der euch den Mod gegeben hat:
+   <Gedonia-Ordner>\BepInEx\LogOutput.log
+(nach dem Spielen, Gedonia vorher beenden). Dazu kurz: was ist passiert, wann, wer war Host,
+ueber Steam oder im Heimnetz.
+
+
+ENTFERNEN
+---------
+Gedonia beenden, "Deinstallieren.cmd" doppelklicken. Es wird genau das entfernt,
+was der Installer hinzugefuegt hat. Deine Spielstaende bleiben, wie sie sind.
+
+
+TECHNIK / LIZENZEN
+------------------
+- Mod-Loader: BepInEx (LGPL-2.1), https://github.com/BepInEx/BepInEx
+  Wird beim Installieren von der offiziellen GitHub-Seite geladen, nicht mitgeliefert.
+- Ueber Steam nutzt der Mod das Steam des Spiels selbst (Lobbys nur fuer Freunde,
+  Steam-P2P mit Valve-Relay). Im Heimnetz geht alles direkt zwischen euren PCs.
+  Es werden keine Daten an andere Server geschickt.
+- Gedonia gehoert Oleg Kazakov. Dieser Mod ist inoffiziell und enthaelt keine Spieldateien.
