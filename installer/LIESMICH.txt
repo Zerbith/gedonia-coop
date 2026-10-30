@@ -44,6 +44,10 @@ Damit ist das ganze Spiel auf Deutsch: Menues, Quests, Gegenstaende, Dialoge.
 Die Uebersetzung ist neu und noch nicht ueberall Korrektur gelesen. Was noch englisch
 erscheint, wird gesammelt in  <Gedonia-Ordner>\BepInEx\config\gedonia-coop-missing-de.txt
 - diese Datei gerne mitschicken.
+Sprachausgabe: Auf Deutsch werden die Dialoge der NPCs und die Questtexte im Tagebuch
+vorgelesen, und die vertonten Zwischensequenzen sprechen Deutsch (KI-Stimmen, Ordner BepInEx\plugins\voice-de). Ausschalten oder leiser stellen:
+<Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt [VoiceOver] (Enabled, Volume).
+Die englischen Begruessungslaute der NPCs schaltet die Spieloption "Voices" ab.
 
 
 SO SPIELT IHR ZUSAMMEN
@@ -80,13 +84,26 @@ WAS GEMEINSAM IST
 -----------------
 - Ihr seht euch mit eurem Aussehen, eurer Ausruestung, Waffen, Pfeilen und Zaubern -
   auch Zauber- und Kampfeffekte (Heilung, Elemente, Waffenspuren) der anderen.
-- Karte: auf Weltkarte (M), Minikarte und Kompass seht ihr die anderen als blauen Pfeil
-  mit Namen. Ist jemand weit weg, zeigt der Pfeil am Rand in seine Richtung.
+- Gruppe: Im Co-op-Menue (F8) -> "Gruppe" ladet ihr andere ein (annehmen/ablehnen dort).
+  Wer einlaedt, leitet die Gruppe und kann Mitglieder entfernen; jeder kann sie verlassen.
+  Links seht ihr die Mitglieder mit Lebensbalken. Die Gruppe bestimmt: geteilte
+  Kampf-Erfahrung, wer auf der Karte erscheint und wie stark die Gegner werden.
+- Karte: auf Weltkarte (M), Minikarte und Kompass seht ihr eure Gruppenmitglieder als
+  blauen Pfeil mit Namen. Ist jemand weit weg, zeigt der Pfeil am Rand in seine Richtung.
   Ist jemand in einem Dungeon, steht er grau am letzten Ort draussen.
 - Gegner: dieselben Gegner fuer alle. Treffer zaehlen fuer alle.
-- Erfahrung aus Kaempfen ist geteilt: Wer bis 100 m entfernt in derselben Welt ist, bekommt
+  Sind mehrere aus einer Gruppe in der Naehe (150 m), werden Gegner staerker: je weiteres
+  Mitglied +50 % Leben und +20 % Schaden. Das bleibt, solange der Kampf dauert.
+  Einstellbar (gilt die Einstellung des Hosts) in gedonia.coop.cfg, Abschnitt [Scaling].
+- Erfahrung aus Kaempfen ist in der Gruppe geteilt: Wer aus der Gruppe bis 100 m entfernt
+  in derselben Welt ist, bekommt
   genau dieselben Punkte wie der, bei dem der Gegner stirbt. So steigt ihr gleich schnell
   auf (ein Abstand von vorher bleibt).
+- Handeln: Im Co-op-Menue (F8) -> "Handeln" einen Spieler in der Naehe (15 m) waehlen.
+  Beide legen Gegenstaende und Gold hinein und druecken "Bestaetigen"; aendert einer etwas,
+  muessen beide neu bestaetigen. Getauscht wird nur ganz oder gar nicht: Bricht die
+  Verbindung ab, bekommt jeder seine Sachen zurueck (oder die des anderen, wenn der Tausch
+  schon durch war). Quest-Gegenstaende kann man nicht handeln.
 - Beute: jeder hat seine eigene. Jeder kann jede Leiche einmal selbst pluendern; sie bleibt
   bei dir liegen, bis DU sie gepluendert hast.
 - Quests und Dialoge: das Ergebnis gilt fuer alle. Bei Quest-Abgabe bekommt jeder die
@@ -149,7 +166,6 @@ BEKANNTE GRENZEN (Testversion)
 - Arena, Survival-Modus und Dungeon-Modus (eigene Spielmodi im Hauptmenue) sind nicht
   fuer Co-op abgestimmt - spielt im normalen Spiel ("Kampagne / offene Welt").
 - Teleports aus der Story betreffen beide Spieler.
-- Die deutsche Sprachausgabe gibt es (noch) nicht; vertont bleibt alles wie im Original.
 
 
 PROBLEME?

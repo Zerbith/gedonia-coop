@@ -182,6 +182,24 @@ foreach ($t in Get-ChildItem (Join-Path $here 'lang') -Filter 'de-*.tsv' -ErrorA
     Copy-Item $t.FullName (Join-Path $pluginDir $t.Name) -Force
     $added.Add("BepInEx\plugins\$($t.Name)")
 }
+# German voice-over (voice-de\*.ogg + speakers.tsv); an older set goes first.
+$voiceSrc = Join-Path $here 'voice-de'
+if (Test-Path $voiceSrc) {
+    $voiceDir = Join-Path $pluginDir 'voice-de'
+    if (Test-Path $voiceDir) { Get-ChildItem $voiceDir -File -Recurse | Where-Object { $_.Extension -eq '.ogg' -or $_.Extension -eq '.tsv' } | Remove-Item -Force }
+    else { New-Item -ItemType Directory -Force $voiceDir | Out-Null; $dirsAdded.Add('BepInEx\plugins\voice-de') }
+    # cutscene\ holds the German cutscene lines
+    foreach ($sub in Get-ChildItem $voiceSrc -Directory) {
+        $d = Join-Path $voiceDir $sub.Name
+        if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force $d | Out-Null; $dirsAdded.Add("BepInEx\plugins\voice-de\$($sub.Name)") }
+    }
+    foreach ($f in Get-ChildItem $voiceSrc -File -Recurse) {
+        $rel = $f.FullName.Substring($voiceSrc.Length).TrimStart('\')
+        Copy-Item $f.FullName (Join-Path $voiceDir $rel) -Force
+        $added.Add("BepInEx\plugins\voice-de\$rel")
+    }
+    Say 'Deutsche Sprachausgabe installiert.' 'Green'
+}
 
 $version = (Get-Content (Join-Path $here 'VERSION.txt') -ErrorAction SilentlyContinue | Select-Object -First 1)
 $lines = @("version=$version", "bepinex=$bepinex", "installed=$(Get-Date -Format s)")
@@ -192,7 +210,8 @@ Set-Content -Path $manifest -Value $lines -Encoding UTF8
 Say ''
 Say "Fertig: Gedonia Co-op $version ist installiert." 'Green'
 Say 'Starte Gedonia ganz normal ueber Steam. Im Hauptmenue gibt es jetzt "Co-op hosten" und "Co-op beitreten",'
-Say 'im Spiel den Co-op-Knopf oben rechts in der Leiste (oder F8). Deutsch: Knopf "Deutsch" unten links im Hauptmenue.'
+Say 'im Spiel den Co-op-Knopf oben rechts in der Leiste (oder F8).'
+if (Test-Path (Join-Path $here 'lang')) { Say 'Deutsch: Knopf "Deutsch" unten links im Hauptmenue.' }
 Say 'Mehr in LIESMICH.txt.'
 Say ''
 Say "Done: Gedonia Co-op $version is installed. Start Gedonia from Steam as usual; the main menu now has" 'Green'

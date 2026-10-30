@@ -877,8 +877,12 @@ namespace GedoniaCoop
                 Enemy e;
                 GameObject attacker = byId.TryGetValue(enemyId, out e) && e.Go != null ? e.Go : null;
                 int before = player.health;
+                // Scaled here by the enemy's id (its object may not be loaded here).
+                amount = ScaleSync.ScaleHit(enemyId, amount);
+                ScaleSync.Skip = true;
                 try { player.Damage(amount, type, attacker, crit, knock, sharp, knockBack); }
                 catch (Exception ex) { Plugin.Log.LogError("Hit from enemy " + enemyId + " failed: " + ex); }
+                finally { ScaleSync.Skip = false; }
                 HitsTaken++;
                 HealthTaken += Math.Max(0, before - player.health);
                 Plugin.Log.LogInfo(Plugin.Stamp() + " Hit by enemy " + enemyId + " via the owner: " + amount + " " + type + ", health " + before + " -> " + player.health);
@@ -1029,6 +1033,30 @@ namespace GedoniaCoop
                 " hitsSent=" + HitsSent + " hitsTaken=" + HitsTaken + " healthLost=" + HealthTaken +
                 " deathsSent=" + DeathsSent + " deathsApplied=" + DeathsApplied + " owned=[" + string.Join(",", OwnedIds().ConvertAll(x => x.ToString()).ToArray()) + "]");
         }
+
+        // ScaleSync: the shared enemies (not followers) known here.
+        public List<KeyValuePair<int, NPC>> SharedEnemies()
+        {
+            List<KeyValuePair<int, NPC>> l = new List<KeyValuePair<int, NPC>>();
+            foreach (Enemy e in byId.Values)
+                if (e.FixedOwner == 0 && e.Go != null && e.Npc != null) l.Add(new KeyValuePair<int, NPC>(e.Id, e.Npc));
+            return l;
+        }
+
+        // ScaleSync: the shared enemy (not a follower) an attacker object belongs to.
+        public bool SharedEnemyOf(GameObject go, out int id)
+        {
+            id = 0;
+            if (go == null) return false;
+            NPC n = go.GetComponentInParent<NPC>();
+            Enemy e;
+            if (n == null || !byNpc.TryGetValue(n, out e) || e.FixedOwner != 0) return false;
+            id = e.Id;
+            return true;
+        }
+
+        // ScaleSync (host): player -> enemy id -> distance, from the presence reports.
+        public Dictionary<int, Dictionary<int, float>> Presence { get { return presence; } }
 
         // Test bot helper: nearest living hostile enemy with an id.
         public GameObject NearestHostile(Vector3 from, float maxDist, out int id, out string name)

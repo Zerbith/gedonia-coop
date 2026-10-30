@@ -47,7 +47,7 @@ namespace GedoniaCoop
                 hosting.Clear();
                 foreach (FriendInfo f in plugin.Friends()) if (f.Lobby != 0) hosting.Add(f);
             }
-            if ((JoinOpen || MenuOpen || HostOpen) && Input.GetKeyDown(KeyCode.Escape)) { JoinOpen = MenuOpen = HostOpen = false; }
+            if ((JoinOpen || MenuOpen || HostOpen || ExtraOpen) && Input.GetKeyDown(KeyCode.Escape)) { JoinOpen = MenuOpen = HostOpen = false; CloseExtra(); }
             // Searching the home network while the join list is open.
             if (JoinOpen && lanSearch == null)
             {
@@ -56,7 +56,7 @@ namespace GedoniaCoop
             }
             if (!JoinOpen && lanSearch != null) { lanSearch.Dispose(); lanSearch = null; }
             if (lanSearch != null && now >= nextLanProbe) { nextLanProbe = now + 2f; lanSearch.Probe(); }
-            bool open = JoinOpen || MenuOpen || HostOpen;
+            bool open = JoinOpen || MenuOpen || HostOpen || ExtraOpen;
             bool over = open && panelOnScreen.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
             if (over != shielding) { shielding = over; UICamera.ignoreAllEvents = over; }
             // In play the game hides and locks the cursor; with the menu open
@@ -75,6 +75,10 @@ namespace GedoniaCoop
             }
             if (BlocksGame) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; }
         }
+
+        // Windows of other features opened from the co-op menu.
+        static bool ExtraOpen { get { return (PartySync.Instance != null && PartySync.Instance.Open) || (TradeSync.Instance != null && TradeSync.Instance.Open); } }
+        static void CloseExtra() { if (PartySync.Instance != null) PartySync.Instance.Open = false; if (TradeSync.Instance != null) TradeSync.Instance.Open = false; }
 
         public static bool BlocksGame;
         bool savedVisible;
@@ -207,6 +211,24 @@ namespace GedoniaCoop
             if (JoinOpen) DrawJoin(sw, scale);
             if (MenuOpen) DrawMenu(sw, scale);
             if (HostOpen) DrawHost(sw, scale);
+            PartySync party = PartySync.Instance;
+            if (party != null)
+            {
+                party.DrawFrames(panel);
+                if (party.Open)
+                {
+                    party.DrawPanel(sw, panel);
+                    Rect a = party.PanelRect;
+                    panelOnScreen = new Rect(a.x * scale, a.y * scale, a.width * scale, a.height * scale);
+                }
+            }
+            TradeSync trade = TradeSync.Instance;
+            if (trade != null && trade.Open)
+            {
+                trade.DrawPanel(sw, panel);
+                Rect a = trade.PanelRect;
+                panelOnScreen = new Rect(a.x * scale, a.y * scale, a.width * scale, a.height * scale);
+            }
         }
 
         void DrawJoin(float sw, float scale)
@@ -280,7 +302,7 @@ namespace GedoniaCoop
         void DrawMenu(float sw, float scale)
         {
             Vector2 at = TopButtonOnScreen() / scale;
-            float w = 300f, h = 260f;
+            float w = 300f, h = 330f;
             Rect area = new Rect(Mathf.Clamp(at.x - w / 2f, 10f, sw - w - 10f), at.y + 30f, w, h);
             panelOnScreen = new Rect(area.x * scale, area.y * scale, area.width * scale, area.height * scale);
             GUI.Box(area, "", panel);
@@ -290,6 +312,18 @@ namespace GedoniaCoop
             if (plugin.CoopActive)
             {
                 if (plugin.CoopCanInvite && GUILayout.Button(Lang.T("Invite friends", "Freunde einladen"))) { MenuOpen = false; plugin.OpenInvite(); }
+                if (PartySync.Instance != null)
+                {
+                    int inv = PartySync.Instance.InvitationCount;
+                    string label = Lang.T("Group", "Gruppe") + (inv > 0 ? Lang.T(" (" + inv + " invitation)", " (" + inv + " Einladung)") : "");
+                    if (GUILayout.Button(label)) { MenuOpen = false; PartySync.Instance.Open = true; }
+                }
+                if (TradeSync.Instance != null)
+                {
+                    int asks = TradeSync.Instance.AskCount;
+                    string label = Lang.T("Trade", "Handeln") + (asks > 0 ? Lang.T(" (" + asks + " request)", " (" + asks + " Anfrage)") : "");
+                    if (GUILayout.Button(label)) { MenuOpen = false; TradeSync.Instance.Open = true; }
+                }
                 if (GUILayout.Button(Lang.T("Leave co-op", "Co-op verlassen"))) { MenuOpen = false; plugin.CoopLeave(); }
             }
             else

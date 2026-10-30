@@ -16,8 +16,9 @@ namespace GedoniaCoop
     //  - Where the kill really happens (the enemy's owner, or a local-only
     //    enemy) the XP is given as usual and the amount gained is sent.
     //  - A death copied from the owner gives no XP of its own.
-    //  - Receivers in the same world within 100 m of the sender add exactly
-    //    that amount (no local multipliers), with the game's level-ups.
+    //  - Receivers in the same world within 100 m of the sender and in its
+    //    group (PartySync) add exactly that amount (no local multipliers),
+    //    with the game's level-ups.
     // Quest XP already runs on every machine (StorySync); exploring, crafting
     // and puzzles stay personal.
     public class XpSync
@@ -30,7 +31,7 @@ namespace GedoniaCoop
         static bool adding; // adding a friend's XP
 
         readonly List<int> outbox = new List<int>();
-        public int Sent, SentXp, Received, Applied, AppliedXp, TooFar, Suppressed;
+        public int Sent, SentXp, Received, Applied, AppliedXp, TooFar, Suppressed, NotInGroup;
 
         public XpSync(Net net, Func<IEnumerable<int>> peers)
         {
@@ -91,6 +92,12 @@ namespace GedoniaCoop
             {
                 TooFar++;
                 Plugin.Log.LogInfo(Plugin.Stamp() + " XP: " + amount + " from player " + m.Sender + " not shared (" + (Plugin.SameWorld(m.Sender) ? d.ToString("F0") + " m away" : "other world") + ")");
+                return;
+            }
+            if (!PartySync.Mate(m.Sender))
+            {
+                NotInGroup++;
+                Plugin.Log.LogInfo(Plugin.Stamp() + " XP: " + amount + " from player " + m.Sender + " not shared (not in our group)");
                 return;
             }
             Add(player, amount);

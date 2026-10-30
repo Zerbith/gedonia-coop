@@ -73,13 +73,25 @@ WHAT IS SHARED
 - You see each other with your looks, gear, weapons, arrows and spells, and your Steam name
   above your head - also the others' spell and combat effects (healing, elements, weapon
   trails).
-- Maps: on the world map (M), minimap and compass the others are a blue arrow with their
-  name. If someone is far away, the arrow at the edge points their way.
+- Group: co-op menu (F8) -> "Group" to invite others (accept/decline there). Whoever invites
+  leads the group and can remove members; anyone can leave. Members are shown on the left
+  with a health bar. The group decides: shared combat experience, who appears on the map and
+  how strong enemies get.
+- Maps: on the world map (M), minimap and compass your group members are a blue arrow with
+  their name. If someone is far away, the arrow at the edge points their way.
   Someone in a dungeon is shown grey at the last place outside.
 - Enemies: the same enemies for everyone. Hits count for everyone.
-- Combat experience is shared: whoever is within 100 m in the same world gets exactly the
+  With several members of one group nearby (150 m) enemies get stronger: +50 % health and
+  +20 % damage per extra member, kept while the fight lasts. Set in gedonia.coop.cfg,
+  section [Scaling] (the host's settings count).
+- Combat experience is shared in the group: whoever of the group is within 100 m in the same
+  world gets exactly the
   points of the player where the enemy dies. So you level at the same pace (a gap from
   before stays).
+- Trading: co-op menu (F8) -> "Trade", pick a player nearby (15 m). Both put in items and
+  gold and press "Confirm"; any change means both confirm again. All or nothing: if the
+  connection drops, everyone gets their goods back (or the other's, if the trade had gone
+  through). Quest items cannot be traded.
 - Loot: everyone has their own. Everyone can loot every body once; it stays for you until
   YOU have looted it.
 - Quests and dialogues: the result counts for everyone. When a quest is handed in, everyone
@@ -139,6 +151,9 @@ GERMAN TRANSLATION
 ------------------
 The mod also brings a German translation: button "Deutsch" next to "English" at the bottom
 left of the main menu. English stays the default.
+In German, NPC dialogues and the journal's quest texts are read aloud and the voiced cutscenes speak German (AI voices, folder
+BepInEx\plugins\voice-de). Turn off or lower: <Gedonia folder>\BepInEx\config\gedonia.coop.cfg,
+section [VoiceOver] (Enabled, Volume).
 
 
 KNOWN LIMITS (test version)

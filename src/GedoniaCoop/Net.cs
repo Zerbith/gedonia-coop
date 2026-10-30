@@ -38,6 +38,8 @@ namespace GedoniaCoop
         // Inside a dungeon (its rooms are far away from the map, so the map
         // shows the last place outside instead).
         public bool InDungeon;
+        // For the group frames.
+        public int Health, MaxHealth;
     }
 
     // Everything PlayerModelCustomization.RefreshPlayerModel needs. Sent about
@@ -63,7 +65,7 @@ namespace GedoniaCoop
     public class Net : IDisposable
     {
         const ushort Magic = 0x4743; // "GC"
-        const byte Version = 15;
+        const byte Version = 16;
         public const byte ProtocolVersion = Version;
         const byte MsgState = 1;
         const byte MsgAppearance = 2;
@@ -76,7 +78,8 @@ namespace GedoniaCoop
             MsgLootLock = 21, MsgLootGrant = 22, MsgLootRelease = 23, MsgLootTake = 24,
             MsgWorldClock = 25, MsgTimeSkip = 26, MsgActorRoster = 27,
             MsgEventState = 28, MsgEventSpawn = 29, MsgEventObjective = 30, MsgEventComplete = 31, MsgEventUse = 32,
-            MsgWorldState = 33, MsgProjectile = 34, MsgExpeditions = 35, MsgExpeditionStart = 36, MsgEventObject = 37, MsgEventObjSpawn = 38, MsgWorldStateRequest = 39, MsgTravellers = 40, MsgSounds = 41, MsgDialogue = 42, MsgXp = 43, MsgEffects = 44, MsgCutscene = 45, MsgForm = 46;
+            MsgWorldState = 33, MsgProjectile = 34, MsgExpeditions = 35, MsgExpeditionStart = 36, MsgEventObject = 37, MsgEventObjSpawn = 38, MsgWorldStateRequest = 39, MsgTravellers = 40, MsgSounds = 41, MsgDialogue = 42, MsgXp = 43, MsgEffects = 44, MsgCutscene = 45, MsgForm = 46,
+            MsgParty = 47, MsgScale = 48, MsgTrade = 49;
 
         public struct Message
         {
@@ -205,6 +208,7 @@ namespace GedoniaCoop
                 w.Write((byte)s.Params.Length);
                 foreach (float f in s.Params) w.Write(f);
                 w.Write(s.Speed); w.Write(s.Clip ?? ""); w.Write(s.WeaponFlags); w.Write(s.TravelSpeed); w.Write(s.Dead); w.Write(s.Stealth); w.Write(s.InDungeon);
+                w.Write(s.Health); w.Write(s.MaxHealth);
                 w.Flush();
                 return ms.ToArray();
             }
@@ -265,6 +269,7 @@ namespace GedoniaCoop
                         s.Params = new float[r.ReadByte()];
                         for (int i = 0; i < s.Params.Length; i++) s.Params[i] = r.ReadSingle();
                         s.Speed = r.ReadSingle(); s.Clip = r.ReadString(); s.WeaponFlags = r.ReadByte(); s.TravelSpeed = r.ReadSingle(); s.Dead = r.ReadBoolean(); s.Stealth = r.ReadBoolean(); s.InDungeon = r.ReadBoolean();
+                        s.Health = r.ReadInt32(); s.MaxHealth = r.ReadInt32();
                         States.Add(s);
                         sender = s.Id;
                         return true;

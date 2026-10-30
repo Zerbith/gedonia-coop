@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.7.1). Tested with Steam build 16727998.
+Status: **playable alpha** (0.8.1). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -13,12 +13,21 @@ No game files are included; you need your own copy of the game.
 
 - **Players:** your real character model, animations, looks and gear, weapons, arrows and spells,
   spell and combat effects (healing, elements, weapon trails), transformations (werewolf, blood demon,
-  elemental forms), Steam name above the head, markers on world map, minimap and compass, sounds
+  elemental forms), Steam name above the head, markers on world map, minimap and compass (group members), sounds
   (steps, swings, hits).
 - **Enemies:** the same enemies for everyone, one owner per enemy (hand-over when players split up),
   hits from everyone count.
-- **Experience:** combat XP is shared - everyone within 100 m in the same world gets exactly the
-  points of the kill, so players level at the same pace.
+- **Groups:** invite players from the co-op menu (F8 -> Group); the inviter leads and can remove members.
+  Members are shown with a health bar. A group decides who shares combat XP, who appears on the map and
+  how strong enemies get. Without a group none of these are shared.
+- **Experience:** combat XP is shared in the group - members within 100 m in the same world get exactly
+  the points of the kill, so they level at the same pace.
+- **Enemy scaling:** with several members of one group within 150 m an enemy gets +50 % health and +20 %
+  damage per extra member (kept while the fight lasts). Host-authoritative; section [Scaling] in
+  gedonia.coop.cfg (Enabled, HealthPerExtraPlayer, DamagePerExtraPlayer).
+- **Trading:** co-op menu (F8 -> Trade), players within 15 m offer items and gold and both confirm. All or
+  nothing: a two-phase commit with the host as coordinator and an escrow file, so a dropped connection
+  neither duplicates nor loses goods. Quest items cannot be traded.
 - **Loot:** every player has their own; a body stays for you until you have looted it.
 - **Story:** the host's story counts. Dialogue answers and other story calls are run on every machine
   in the host's order; quests are repaired if a player falls behind; late joiners catch up.
@@ -82,7 +91,9 @@ You need your own test save named `coop-test.es3` in `backups\`.
 
 The plugin can show the whole game in German. The translation tables pair the game's own English
 texts with the German ones, so they are not part of this repository or its releases. Without them the
-plugin stays English and shows no "Deutsch" button.
+plugin stays English and shows no "Deutsch" button. The plugin can also play a German voice-over
+(dialogues, quest texts, cutscenes) from generated audio files; those are derived from the game's texts
+too and are not included either.
 
 ## Known issues
 

@@ -10,7 +10,7 @@
 #                           stands still and owns the enemies near both of them
 #   -ClientDelay <s>        start the friend this many seconds after the host
 param([switch]$Stop, [ValidateSet('udp', 'steam-mock')] [string]$Transport = 'udp',
-      [ValidateSet('walk', 'fight', 'story', 'loot', 'clock', 'apart', 'lossy', 'death', 'companions', 'event', 'latejoin', 'farloot', 'chestgold', 'chestlid', 'looks', 'bow', 'ui', 'worlds', 'dungeon', 'expedition', 'expfull', 'eventhandover', 'summons', 'restpoints', 'survey', 'menu', 'german', 'map', 'lan', 'respawn', 'respawnnorth', 'travellers', 'pause', 'dialogue', 'effects')] [string]$Scenario = 'walk',
+      [ValidateSet('walk', 'fight', 'story', 'loot', 'clock', 'apart', 'lossy', 'death', 'companions', 'event', 'latejoin', 'farloot', 'chestgold', 'chestlid', 'looks', 'bow', 'ui', 'worlds', 'dungeon', 'expedition', 'expfull', 'eventhandover', 'summons', 'restpoints', 'survey', 'menu', 'german', 'map', 'lan', 'respawn', 'respawnnorth', 'travellers', 'pause', 'dialogue', 'effects', 'party', 'scaling', 'trade')] [string]$Scenario = 'walk',
       [int]$ClientDelay = 3, [string]$ExpPattern = '*|*|*',
       [string]$DialogSteps = 'dialogsurvey@15,gotovillage:Weystane@18,dialogsurvey@30', [string]$DialogClientSteps = 'none@999')
 $root = Split-Path -Parent $PSScriptRoot
@@ -96,9 +96,23 @@ if ($Transport -eq 'udp') {
 # travellers: the friend moves its travellers away (like another save), both go to the bard #15 by
 # their own tables (must be the host's: same place, the friend mirrors it); the host leaves at 60 s (the
 # friend must walk the bard and report it), comes back at 100 s by its table (must find the bard there).
+# scaling: host scales +50 % health / +20 % damage per extra group member; the two form a group, the
+# friend fights (its hits taken must be scaled, both must show the same max health), leaves the group
+# at 60 s (unhurt enemies go back to 1 player 10 s later, hurt ones keep their numbers).
+# trade (the friend drives, the host answers automatically: accepts, offers 1 item + 10 gold,
+# confirms after the friend): 1) a normal exchange, 2) the friend uses up its offered item -> cancelled,
+# 3) the friend never answers the commit -> host aborts after 20 s, both get their goods back,
+# 4) the friend misses the outcome -> its escrow file asks the host again -> delivered. Compare the
+# [tradecheck] stacks: both inventories together must stay the same.
+# party: the host kills an enemy (no group: the friend gets no XP), invites the friend (accepts; both
+# log the group and map), kills again (XP shared), the friend leaves (not shared), is invited again and
+# removed by the host; then the friend invites the host, who declines.
 # loot: the friend opens the nearest chest, takes one item, then the rest; the
 # host tries to open the same chest in between and must be turned away.
 $hostTest = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogSteps" }
+            elseif ($Scenario -eq 'scaling') { '-coop-test-regen 1 -coop-scale-health 0.5 -coop-scale-damage 0.2 -coop-test-story scalelog@14,partyinvite@16,partyinvite@24,scalelog@40,scalelog@60,shot:scalehost@62,scalelog@85,scalelog@110' }
+            elseif ($Scenario -eq 'trade') { '-coop-test-story tradeauto@8,tradelog@12,tradelog@45,tradelog@60,tradelog@95,tradelog@150' }
+            elseif ($Scenario -eq 'party') { '-coop-test-regen 1 -coop-test-story partylog@14,killnear@16,partyinvite@20,partylog@30,maplog@30,partyui@31,shot:partyhost@33,partyui@35,killnear@40,partylog@55,maplog@55,killnear@58,partyinvite@62,partykick@70,partylog@75,partydecline@82,partylog@86,xplog@88' }
             elseif ($Scenario -eq 'effects') { '-coop-test-regen 1 -coop-test-story intellect:2@14,xplog@15,effect:33@25,effect:7on@28,shot:effects@29,effectstate@30,shot:fight1@50,shot:fight2@52,xplog@60,bodies@85,lootbody@88,bodies@92,xplog@100,effectstate@100' }
             elseif ($Scenario -eq 'pause') { '-coop-test-story pause@15,timescale@17,timescale@19,unpause@20,timescale@22' }
             elseif ($Scenario -eq 'travellers') { '-coop-test-story travellers@12,gototraveller:15@15,travellers@30,shot:bard@40,travellers@50,gotopos:486;15;474@60,travellers@90,gototraveller:15@100,travellers@110,shot:bardback@112' }
@@ -130,6 +144,9 @@ $hostTest = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogSteps" }
 $h = Start-Process "$root\game\Gedonia.exe" -WorkingDirectory "$root\game" -PassThru -ArgumentList "$w $hostNet -coop-name Host $common -coop-dump 1 $hostTest"
 Start-Sleep $ClientDelay
 $clientBot = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogClientSteps" }
+             elseif ($Scenario -eq 'scaling') { '-coop-bot fight -coop-bot-delay 30 -coop-test-regen 1 -coop-test-story scalelog@14,partyaccept@18,partyaccept@24,scalelog@32,scalelog@52,partyleave@60,scalelog@77,scalelog@102' }
+             elseif ($Scenario -eq 'trade') { '-coop-test-story tradelog@14,tradeask@18,tradestack:0@22,tradeui@22,shot:tradeopen@25,tradeconfirm@26,tradelog@32,tradeask@36,tradeitem:0@41,tradeuse@44,tradelog@47,tradeask@50,tradegold:7@55,tradestall@56,tradeconfirm@58,tradeunstall@82,tradelog@83,tradeask@86,tradeitem:0@91,tradedrop@92,tradeconfirm@94,tradelog@104,tradeui@120,shot:tradeui@122,tradeui:off@124,tradelog@140' }
+             elseif ($Scenario -eq 'party') { '-coop-test-regen 1 -coop-test-story xplog@14,xplog@19,partyaccept@25,partylog@30,maplog@30,shot:partyclient@33,xplog@45,partyleave@50,partylog@55,maplog@55,xplog@62,partyaccept@66,partylog@75,partyinvite@78,partylog@86,xplog@88' }
              elseif ($Scenario -eq 'effects') { '-coop-bot fight -coop-bot-delay 36 -coop-test-regen 1 -coop-test-strong 10 -coop-test-story intellect:8@14,xplog@15,shot:hosteffect@27,effectstate@28,effect:slash@32,effect:5@34,xplog@60,bodies@80,bodies@96,lootbody@98,bodies@100,xplog@100,effectstate@100' }
              elseif ($Scenario -eq 'pause') { '-coop-bot circle -coop-test-story pause@30,timescale@32,shot:pause@33,timescale@40,unpause@45,timescale@47' }
              elseif ($Scenario -eq 'travellers') { '-coop-test-story travellershift@8,travellers@12,gototraveller:15@20,travellers@30,shot:bard@40,travellers@50,travellers@90,travellers@110,shot:bardback@112' }

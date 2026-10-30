@@ -34,6 +34,7 @@ namespace GedoniaCoop
         static readonly Dictionary<string, string> cache = new Dictionary<string, string>();
         static readonly HashSet<string> missing = new HashSet<string>();
         static readonly HashSet<string> exported = new HashSet<string>();
+        static readonly HashSet<string> speakersSeen = new HashSet<string>();
         static readonly Regex Slot = new Regex(@"\{(\d+)\}");
         static readonly Regex Pieces = new Regex(@"(\[[0-9A-Fa-f]{6}\]|\[-\]|\[/?[bisu]\]|\n)");
         static bool inside;
@@ -184,6 +185,7 @@ namespace GedoniaCoop
         // BepInEx/coop-texts-en.tsv as source<TAB>text, without duplicates.
         public static void Export()
         {
+            try { CutsceneSurvey.LoadPrefabs(); } catch (Exception e) { Plugin.Log.LogWarning("[cutscenes] " + e.Message); }
             HashSet<string> seen = exported;
             StringBuilder sb = new StringBuilder();
             Action<string, string> add = (src, t) =>
@@ -221,6 +223,54 @@ namespace GedoniaCoop
             string file = Path.Combine(Paths.BepInExRootPath, "coop-texts-en.tsv");
             File.AppendAllText(file, sb.ToString(), Encoding.UTF8);
             Plugin.Log.LogInfo("[textexport] " + seen.Count + " texts (" + modules + " dialogue modules) -> " + file);
+            ExportSpeakers();
+            try { CutsceneSurvey.Collect(); } catch (Exception e) { Plugin.Log.LogWarning("[cutscenes] " + e.Message); }
+        }
+
+        // Who says which line, for the German voice-over: BepInEx/coop-speakers-en.tsv as
+        // kind, npc name, npc type, body type, greeting clip names, object, scene, text.
+        // One row per speaker and line (the same line may come from several NPCs).
+        static void ExportSpeakers()
+        {
+            StringBuilder sb = new StringBuilder();
+            int rows = 0;
+            Action<string, Component, string, AudioClip[], string> add = (kind, c, name, clips, t) =>
+            {
+                if (string.IsNullOrEmpty(t) || !LooksLikeText(t)) return;
+                NPC npc = c.GetComponent<NPC>();
+                string clipNames = "";
+                if (clips != null) foreach (AudioClip a in clips) if (a != null) clipNames += (clipNames.Length > 0 ? "," : "") + a.name;
+                string scene = c.gameObject.scene.IsValid() ? c.gameObject.scene.name : "(asset)";
+                string text = t.Replace("\r", "").Replace("\n", "\\n").Replace("\t", "\\t");
+                if (!speakersSeen.Add(kind + "|" + name + "|" + clipNames + "|" + text)) return;
+                sb.Append(kind).Append('\t').Append(name).Append('\t')
+                  .Append(npc != null ? npc.npcType.ToString() : "").Append('\t')
+                  .Append(npc != null ? npc.bodyType.ToString() : "").Append('\t')
+                  .Append(clipNames).Append('\t').Append(c.gameObject.name).Append('\t')
+                  .Append(scene).Append('\t').Append(text).Append('\n');
+                rows++;
+            };
+            foreach (DialogueNPCModule d in Resources.FindObjectsOfTypeAll<DialogueNPCModule>())
+            {
+                if (d.allDialogue == null) continue;
+                NPC npc = d.GetComponent<NPC>();
+                string name = npc != null ? npc.npcName : d.name;
+                add("dialogue", d, name, d.greetings, d.defaultAnswer);
+                foreach (DialogiePoint p in d.allDialogue) add("dialogue", d, name, d.greetings, p.npcAnswerText);
+            }
+            foreach (RandomCItizenNPCModule r in Resources.FindObjectsOfTypeAll<RandomCItizenNPCModule>())
+            {
+                if (r.maleDialogue != null) foreach (string s in r.maleDialogue) add("citizen-male", r, "", r.maleSounds, s);
+                if (r.femaleDialogie != null) foreach (string s in r.femaleDialogie) add("citizen-female", r, "", r.femaleSounds, s);
+            }
+            foreach (RandomTalkNPCModule r in Resources.FindObjectsOfTypeAll<RandomTalkNPCModule>())
+            {
+                NPC npc = r.GetComponent<NPC>();
+                if (r.phrases != null) foreach (string s in r.phrases) add("talk", r, npc != null ? npc.npcName : r.name, r.greetings, s);
+            }
+            string file = Path.Combine(Paths.BepInExRootPath, "coop-speakers-en.tsv");
+            File.AppendAllText(file, sb.ToString(), Encoding.UTF8);
+            Plugin.Log.LogInfo("[textexport] speakers +" + rows + " rows -> " + file);
         }
 
         static List<KeyValuePair<Type, FieldInfo[]>> paired;

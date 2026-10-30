@@ -3,7 +3,8 @@
 # no BepInEx (the installer downloads that, hash-checked).
 #   -Public  the public release (dist\public\): without the German tables (they
 #            hold the game's own texts) and without the readme parts about them
-param([switch]$Public)
+#   -NoVoice without the German voice-over (tts\render\ogg, ~100 MB)
+param([switch]$Public, [switch]$NoVoice)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 & "$root\scripts\build.ps1" | Out-Null
@@ -18,6 +19,17 @@ Copy-Item "$root\build\GedoniaCoop.dll" $dir
 if (-not $Public -and (Test-Path "$root\src\GedoniaCoop\lang")) {
     New-Item -ItemType Directory -Force "$dir\lang" | Out-Null
     Copy-Item "$root\src\GedoniaCoop\lang\de-*.tsv" "$dir\lang"
+}
+# German voice-over: generated from the game's texts, so private like the tables.
+if (-not $Public -and -not $NoVoice -and (Test-Path "$root\tts\render\ogg")) {
+    New-Item -ItemType Directory -Force "$dir\voice-de" | Out-Null
+    Copy-Item "$root\tts\render\ogg\*.ogg" "$dir\voice-de"
+    $speakers = Import-Csv "$root\tts\data\speaker_voices.tsv" -Delimiter "`t" | ForEach-Object { "$($_.speaker)`t$($_.voice)" }
+    [IO.File]::WriteAllLines("$dir\voice-de\speakers.tsv", [string[]]$speakers, (New-Object Text.UTF8Encoding($false)))
+    if (Test-Path "$root\tts\render\cutscene\cutscenes.tsv") {
+        New-Item -ItemType Directory -Force "$dir\voice-de\cutscene" | Out-Null
+        Copy-Item "$root\tts\render\cutscene\*.ogg", "$root\tts\render\cutscene\cutscenes.tsv" "$dir\voice-de\cutscene"
+    }
 }
 Copy-Item "$root\installer\install.ps1", "$root\installer\Installieren.cmd", "$root\installer\Deinstallieren.cmd", "$root\installer\Install.cmd", "$root\installer\Uninstall.cmd" $dir
 foreach ($doc in 'LIESMICH.txt', 'README.txt') {
