@@ -55,12 +55,13 @@ namespace GedoniaCoop
         {
             if (anim == null || anim.runtimeAnimatorController == null) return;
             int layers = anim.layerCount;
-            if (s.LayerStates.Length != layers) { s.LayerStates = new int[layers]; s.LayerTimes = new float[layers]; }
+            if (s.LayerStates.Length != layers) { s.LayerStates = new int[layers]; s.LayerTimes = new float[layers]; s.LayerWeights = new float[layers]; }
             for (int l = 0; l < layers; l++)
             {
                 AnimatorStateInfo info = anim.IsInTransition(l) ? anim.GetNextAnimatorStateInfo(l) : anim.GetCurrentAnimatorStateInfo(l);
                 s.LayerStates[l] = info.fullPathHash;
                 s.LayerTimes[l] = info.normalizedTime;
+                s.LayerWeights[l] = anim.GetLayerWeight(l);
             }
             if (s.Params.Length != syncParams.Count) s.Params = new float[syncParams.Count];
             for (int i = 0; i < syncParams.Count; i++)

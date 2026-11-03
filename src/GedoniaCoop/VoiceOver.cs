@@ -45,6 +45,16 @@ namespace GedoniaCoop
             }
         }
 
+        // The files are there, in whatever language the mod shows now.
+        public static bool Available
+        {
+            get
+            {
+                if (voices == null) LoadVoices();
+                return Enabled && voices.Count > 0;
+            }
+        }
+
         static void LoadVoices()
         {
             voices = new Dictionary<string, string>();
@@ -74,6 +84,7 @@ namespace GedoniaCoop
                     instance.source = go.AddComponent<AudioSource>();
                     instance.source.spatialBlend = 0f;
                     instance.source.playOnAwake = false;
+                    go.AddComponent<VoiceGain>();
                 }
                 return instance;
             }
@@ -126,7 +137,7 @@ namespace GedoniaCoop
                     if (req.isNetworkError || req.isHttpError) { Plugin.Log.LogWarning("[voice] " + file + ": " + req.error); continue; }
                     AudioClip clip = DownloadHandlerAudioClip.GetContent(req);
                     source.clip = clip;
-                    source.volume = Volume;
+                    source.volume = 1f;
                     source.Play();
                     Plugin.Log.LogInfo("[voice] playing " + Path.GetFileName(file) + " " + clip.length.ToString("F1") + " s");
                     while (source.isPlaying && gen == generation) yield return null;

@@ -329,7 +329,8 @@ namespace GedoniaCoop
             {
                 if (q == null) continue;
                 char[] bits = new char[q.completed.Length];
-                for (int i = 0; i < bits.Length; i++) bits[i] = q.completed[i] ? '1' : '0';
+                // One digit per objective: 1 = completed, 2 = shown in the journal.
+                for (int i = 0; i < bits.Length; i++) bits[i] = (char)('0' + (q.completed[i] ? 1 : 0) + (q.shownObjective != null && i < q.shownObjective.Length && q.shownObjective[i] ? 2 : 0));
                 active[q.questName] = new string(bits);
             }
             Quest[] db = QuestsData.instance.questDatabase;
@@ -386,13 +387,16 @@ namespace GedoniaCoop
                 }
                 for (int i = 0; i < h.Value.Length && i < mine.Length; i++)
                 {
-                    if (h.Value[i] == '1' && mine[i] == '0')
+                    int hb = h.Value[i] - '0', mb = mine[i] - '0';
+                    string qn = h.Key; int obj = i;
+                    if ((hb & 1) != 0 && (mb & 1) == 0)
                     {
                         diff.Add("'" + h.Key + "' objective " + i + " open");
-                        string qn = h.Key; int obj = i;
-                        Repair(() => QuestsData.instance.ObjectiveCompleted(qn, obj), "complete objective " + obj + " of '" + qn + "'");
+                        Repair(() => CompleteObjective(qn, obj), "complete objective " + obj + " of '" + qn + "'");
                     }
-                    else if (h.Value[i] != mine[i]) diff.Add("'" + h.Key + "' objective " + i + " done here, open on host");
+                    else if ((hb & 1) == 0 && (mb & 1) != 0) diff.Add("'" + h.Key + "' objective " + i + " done here, open on host");
+                    // The next step's line, which the game's story function shows along with it.
+                    if ((hb & 2) != 0 && (mb & 2) == 0 && !Plugin.NoFix("questloop")) Repair(() => ShowObjective(qn, obj), "show objective " + obj + " of '" + qn + "'");
                 }
             }
             foreach (KeyValuePair<string, string> a in active)
@@ -414,8 +418,40 @@ namespace GedoniaCoop
             }
         }
 
+        // QuestsData.ObjectiveCompleted is only the show (tick, sparks, sound): the game's story
+        // functions set completed[] themselves before calling it. Calling just that left the
+        // difference in place, so the "objective done" sound came again with every state (5 s).
+        static void CompleteObjective(string qn, int obj)
+        {
+            ObjectiveShows++;
+            if (!Plugin.NoFix("questloop"))
+            {
+                Quest q = QuestsData.instance.GetCurrentQuestByName(qn);
+                if (q == null || obj >= q.completed.Length) return;
+                q.completed[obj] = true;
+                InterfaceManager.instance.RefreshQuestList();
+            }
+            QuestsData.instance.ObjectiveCompleted(qn, obj);
+        }
+
+        static void ShowObjective(string qn, int obj)
+        {
+            Quest q = QuestsData.instance.GetCurrentQuestByName(qn);
+            if (q == null || q.shownObjective == null || obj >= q.shownObjective.Length) return;
+            q.shownObjective[obj] = true;
+            InterfaceManager.instance.RefreshQuestList();
+        }
+
+        public static int ObjectiveShows;
+        // A repair that didn't take must not repeat its sound and message for ever.
+        readonly Dictionary<string, float> repairedAt = new Dictionary<string, float>();
+        public int RepairsHeldBack;
+
         void Repair(Action fix, string what)
         {
+            float last;
+            if (repairedAt.TryGetValue(what, out last) && Time.realtimeSinceStartup - last < 60f && !Plugin.NoFix("questloop")) { RepairsHeldBack++; return; }
+            repairedAt[what] = Time.realtimeSinceStartup;
             applying = true;
             try { fix(); Repairs++; Plugin.Log.LogInfo(Plugin.Stamp() + " [quests] repaired: " + what); }
             catch (Exception e) { Plugin.Log.LogError("Quest repair '" + what + "' failed: " + e); }
@@ -517,6 +553,29 @@ namespace GedoniaCoop
         {
             Plugin.Log.LogInfo(Plugin.Stamp() + " Test: dialogue answer '" + name + "'");
             Dispatch(GameManager.instance, name, SendMessageOptions.DontRequireReceiver);
+        }
+
+        // Test: an objective done behind the sync's back, as a story function reached by a path
+        // that runs on one PC only (zone entry, item pickup): questobj:<quest>:<objective>.
+        public static void TestUnsyncedObjective(string step)
+        {
+            string[] a = step.Split(':');
+            int obj = int.Parse(a[2]);
+            Quest q = QuestsData.instance.GetCurrentQuestByName(a[1]);
+            if (q == null) { Plugin.Log.LogInfo(Plugin.Stamp() + " Test: no quest '" + a[1] + "'"); return; }
+            q.completed[obj] = true;
+            if (obj + 1 < q.shownObjective.Length) q.shownObjective[obj + 1] = true;
+            InterfaceManager.instance.RefreshQuestList();
+            QuestsData.instance.ObjectiveCompleted(a[1], obj);
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Test: objective " + obj + " of '" + a[1] + "' done without sync");
+        }
+
+        // Test: the quest as this PC has it, and how often the objective show (with its sound) ran from repairs.
+        public string TestQuestState(string quest)
+        {
+            Quest q = QuestsData.instance.GetCurrentQuestByName(quest);
+            string s = q == null ? "no quest" : "completed=" + string.Join(",", Array.ConvertAll(q.completed, b => b ? "1" : "0")) + " shown=" + string.Join(",", Array.ConvertAll(q.shownObjective, b => b ? "1" : "0"));
+            return "'" + quest + "' " + s + " objectiveShowsFromRepairs=" + ObjectiveShows + " repairs=" + Repairs + " heldBack=" + RepairsHeldBack;
         }
 
         public static void TestUnsyncedQuest(string quest)

@@ -10,7 +10,9 @@
 #                           stands still and owns the enemies near both of them
 #   -ClientDelay <s>        start the friend this many seconds after the host
 param([switch]$Stop, [ValidateSet('udp', 'steam-mock')] [string]$Transport = 'udp',
-      [ValidateSet('walk', 'fight', 'story', 'loot', 'clock', 'apart', 'lossy', 'death', 'companions', 'event', 'latejoin', 'farloot', 'chestgold', 'chestlid', 'looks', 'bow', 'ui', 'worlds', 'dungeon', 'expedition', 'expfull', 'eventhandover', 'summons', 'restpoints', 'survey', 'menu', 'german', 'map', 'lan', 'respawn', 'respawnnorth', 'travellers', 'pause', 'dialogue', 'effects', 'party', 'scaling', 'trade')] [string]$Scenario = 'walk',
+      [ValidateSet('walk', 'fight', 'story', 'loot', 'clock', 'apart', 'lossy', 'death', 'companions', 'event', 'latejoin', 'farloot', 'chestgold', 'chestlid', 'looks', 'bow', 'ui', 'worlds', 'dungeon', 'expedition', 'expfull', 'eventhandover', 'summons', 'restpoints', 'survey', 'menu', 'german', 'map', 'lan', 'respawn', 'respawnnorth', 'travellers', 'pause', 'dialogue', 'effects', 'party', 'scaling', 'trade', 'chat', 'voicemute', 'fixsurvey', 'mountride', 'spells', 'tooltips', 'woodevent', 'doors', 'doorsjoin', 'questloop', 'viewvoice')] [string]$Scenario = 'walk',
+      [string]$NoFix = '',
+      [ValidateSet('de-on', 'de-off', 'en-on', 'en-off')] [string]$VoiceCase = 'de-on',
       [int]$ClientDelay = 3, [string]$ExpPattern = '*|*|*',
       [string]$DialogSteps = 'dialogsurvey@15,gotovillage:Weystane@18,dialogsurvey@30', [string]$DialogClientSteps = 'none@999')
 $root = Split-Path -Parent $PSScriptRoot
@@ -29,6 +31,7 @@ foreach ($g in "$root\game", "$root\game2") {
 
 $w = '-screen-fullscreen 0 -screen-width 960 -screen-height 540'
 $common = '-coop-autoload coop-test.es3 -coop-shots 8 -coop-animlog 1'
+if ($NoFix) { $common += " -coop-test-nofix $NoFix" }
 if ($Transport -eq 'udp') {
     $hostNet = '-coop-host 7777 -coop-bind 127.0.0.1'
     $clientNet = '-coop-connect 127.0.0.1:7777'
@@ -99,6 +102,14 @@ if ($Transport -eq 'udp') {
 # scaling: host scales +50 % health / +20 % damage per extra group member; the two form a group, the
 # friend fights (its hits taken must be scaled, both must show the same max health), leaves the group
 # at 60 s (unhurt enemies go back to 1 player 10 s later, hurt ones keep their numbers).
+# chat (UDP with 20 % of all packets dropped; the friend's bot keeps walking in a circle): both type
+# messages through the real text field (host German, friend English); while the friend types it must
+# stand still and the game must see no keys, afterwards it walks on. The friend sends a burst (must stay
+# in order), a too long text (field limit) and drops a draft with Esc; the host sends a dirty message
+# past its own cleaning (the friend must clean it). Fake keys on the host: Esc opens the pause menu, Enter
+# doesn't open the chat over it, Esc closes the menu, Enter opens the chat, Esc doesn't reach the game while
+# the field is open, the real Esc path closes it without a pause menu.
+# Compare the [chatline] entries of both logs, [chatprobe] for the keyboard.
 # trade (the friend drives, the host answers automatically: accepts, offers 1 item + 10 gold,
 # confirms after the friend): 1) a normal exchange, 2) the friend uses up its offered item -> cancelled,
 # 3) the friend never answers the commit -> host aborts after 20 s, both get their goods back,
@@ -109,8 +120,40 @@ if ($Transport -eq 'udp') {
 # removed by the host; then the friend invites the host, who declines.
 # loot: the friend opens the nearest chest, takes one item, then the rest; the
 # host tries to open the same chest in between and must be turned away.
+# viewvoice (host alone, game's landscape option 2): moves the mod's real sliders. View distance 100 % and 250 %
+# from the same spot (viewstate, fps, shots), voice-over at 100, 200, 300, 0 % (voicepeak: samples before/after
+# the gain, 4 s of dialogue each), the cutscene at 200 %; shots of both option panels. Leaves the sliders at the defaults.
+# voicemute (host alone; -VoiceCase <mod language>-<game's voices option>): talks to an NPC with greeting
+# clips twice, makes citizens bark, opens a merchant, then plays Cutscene2, logging every one-shot.
+# scripts/check-voicemute.ps1 runs all four cases and judges the logs.
+# The next five answer the friends' bug list (0.9.2). -NoFix <names> switches a fix off for a control run:
+# mountride (-NoFix mount): the friend summons a mount (seen unridden), rides it, rides forward, gets off, sends it away,
+# then summons the other seven kinds. Compare [mountstate]: the copy under the puppet, equal weights on the rider's layers.
+# spells (-NoFix projectile,handglow,enemyshots): the friend casts each element of the real spell routine, the host
+# fires a shot from its nearest enemy; then the friend's bot fights (real enemy shots). Compare [handstate] (no hand
+# glows on when the spell is over) and "projectiles" in [effects]; [projcopy] says how far each copy flew.
+# tooltips (host alone, -NoFix tooltips): every item's tooltip through the tables; BepInEx\coop-tooltip-missing.tsv
+# lists what stays English; the hover on the weapon slot on a screenshot.
+# woodevent (-NoFix woodevent): both at 'Logging', the friend gets 16 wood and walks into the circle. The host owns
+# the event. Compare the circle's "active" in [eventstate] on the friend after the end.
+# doors (-NoFix doors): both at a house. F opens and closes for both; a race resolves to one state; the door
+# stays open while the friend stands there after the opener left, and closes after the friend leaves too;
+# a door changed while the friend's cell is unloaded is right when it comes back; the friend joining late gets the table.
+# questloop (-NoFix questloop): both take 'Get a horse', the host finishes objective 0 behind the sync's back (as a story
+# function reached only on one PC). The friend's repair must take once: compare objectiveShowsFromRepairs in [queststate].
 $hostTest = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogSteps" }
+            elseif ($Scenario -eq 'questloop') { '-coop-test-story answer:TakeHorseQuest@42,queststate:Get_a_horse@50,questobj:Get_a_horse:0@54,queststate:Get_a_horse@58,queststate:Get_a_horse@110' }
+            elseif ($Scenario -eq 'fixsurvey') { '-coop-test-story lang:de@8,eventdump@44,tooltipaudit@46,gotopos:701;33;616@48,doorlist@60' }
+            elseif ($Scenario -eq 'tooltips') { '-coop-test-story lang:de@8,tooltipaudit@44,window:OpenInventory@48,tooltipshow@52,shot:tooltip@54,window:OpenInventory@56' }
+            elseif ($Scenario -eq 'mountride') { '-coop-test-story lang:de@8,facefriend@48,mountstate@49,facefriend@54,shot:mountidle@55,mountstate@60,facefriend@61,shot:mountriding@62,mountstate@70,facefriend@71,shot:mountmoving@72,mountstate@80,mountstate@85,mountstate@90,mountstate@100,mountstate@108,mountstate@116,mountstate@124,mountstate@132,mountstate@140,mountstate@150' }
+            elseif ($Scenario -eq 'spells') { '-coop-test-regen 1 -coop-test-story facefriend@45,handstate@49,shot:castseen@52,shot:castseen2@53,handstate@54,effectssum@56,handstate@62,handstate@72,handstate@82,effectssum@90,enemyshot@92,enemyshot@94,enemyshot@96,effectssum@100,effectssum@160' }
+            elseif ($Scenario -eq 'woodevent') { '-coop-test-regen 1 -coop-test-story lang:de@8,gotoevent:Logging@42,eventstate:Logging@50,eventstate:Logging@60,eventstate:Logging@68,eventstate:Logging@74,shot:woodafter@76,eventstate:Logging@85' }
+            elseif ($Scenario -eq 'doors') { '-coop-test-regen 1 -coop-test-story gotopos:701;33;616@42,nocompanions@50,doorlist@58,gotodoor@60,doorstate@62,dooruse@64,doorstate@66,doorstate@70,doorstate@74,doorrace:open@76,doorstate@92,doorbesides@96,doorforce:open@98,doorwalk:6@100,doorexit@107,doorstate@112,doorstate@118,doorstate@132,gotodoor@136,dooruse@150,doorstate@152,doorstate@175,doorstate@188' }
+            elseif ($Scenario -eq 'doorsjoin') { '-coop-test-story gotopos:701;33;616@42,nocompanions@50,gotodoor@60,dooruse@64,doorstate@66,doorstate@100,doorstate@130' }
+            elseif ($Scenario -eq 'viewvoice') { '-coop-test-landscape 2 -coop-test-voices 1 -coop-test-story lang:de@8,viewstate@46,face:0@47,fps:5@48,shot:view100a@54,face:180@55,shot:view100b@57,optionslide:view|1@60,viewstate@62,viewstate@75,viewstate@90,viewstate@105,viewstate@120,face:0@121,fps:5@122,shot:view250a@128,face:180@129,shot:view250b@131,optionslide:view|0@134,viewstate@136,viewstate@150,gotopos:701;33;616@152,voicepeak@164,talk:41341829@166,voicepeak@172,leavedialog@173,optionslide:voice|0.6667@174,talk:41341829@176,voicepeak@182,leavedialog@183,optionslide:voice|1@184,talk:41341829@186,voicepeak@192,leavedialog@193,optionslide:voice|0@194,talk:41341829@196,voicepeak@202,leavedialog@203,optionslide:voice|0.6667@204,cutscene:Cutscenes/Cutscene2@206,voicepeak@234,optionslide:voice|0.3333@270,window:OpenPauseMenu@272,optionsshow:1@274,shot:optvideo@276,optionsshow:2@278,shot:optaudio@280' }
+            elseif ($Scenario -eq 'voicemute') { "-coop-test-voices $(if ($VoiceCase -like '*-on') { 1 } else { 0 }) -coop-test-story lang:$($VoiceCase.Substring(0, 2))@8,gotopos:701;33;616@44,audiolog:on@60,talk:41341829@62,leavedialog@66,talk:41341829@68,leavedialog@72,bark@74,merchanttalk@78,merchantanswer@82,cutscene:Cutscenes/Cutscene2@88" }
             elseif ($Scenario -eq 'scaling') { '-coop-test-regen 1 -coop-scale-health 0.5 -coop-scale-damage 0.2 -coop-test-story scalelog@14,partyinvite@16,partyinvite@24,scalelog@40,scalelog@60,shot:scalehost@62,scalelog@85,scalelog@110' }
+            elseif ($Scenario -eq 'chat') { '-coop-udp-loss 0.2 -coop-test-story lang:de@8,chatprobe@44,chatopen@46,chattype:Hallo_vom_Host@47,chatumlauts@49,shot:chatopen@51,chatprobe@52,chatenter@53,chatlog@55,chatbad@80,chatfake:esc@100,chatprobe@102,chatfake:enter@103,chatprobe@104,chatfake:off@105,chatfake:esc@106,chatprobe@109,chatfake:enter@110,chatprobe@112,chatfake:esc@113,chatprobe@115,chatfake:off@116,chatesc@117,chatprobe@120,chatlog@125,shot:chathistory@126' }
             elseif ($Scenario -eq 'trade') { '-coop-test-story tradeauto@8,tradelog@12,tradelog@45,tradelog@60,tradelog@95,tradelog@150' }
             elseif ($Scenario -eq 'party') { '-coop-test-regen 1 -coop-test-story partylog@14,killnear@16,partyinvite@20,partylog@30,maplog@30,partyui@31,shot:partyhost@33,partyui@35,killnear@40,partylog@55,maplog@55,killnear@58,partyinvite@62,partykick@70,partylog@75,partydecline@82,partylog@86,xplog@88' }
             elseif ($Scenario -eq 'effects') { '-coop-test-regen 1 -coop-test-story intellect:2@14,xplog@15,effect:33@25,effect:7on@28,shot:effects@29,effectstate@30,shot:fight1@50,shot:fight2@52,xplog@60,bodies@85,lootbody@88,bodies@92,xplog@100,effectstate@100' }
@@ -136,15 +179,24 @@ $hostTest = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogSteps" }
             elseif ($Scenario -eq 'apart') { '-coop-bot line -coop-bot-delay 50' }
             elseif ($Scenario -eq 'lossy') { '-coop-udp-loss 0.2' }
             elseif ($Scenario -eq 'companions') { '-coop-test-story answer:ArenaCallChampion@60 -coop-test-charisma 2 -coop-test-regen 1' }
-            elseif ($Scenario -eq 'event') { '-coop-test-story gotopos:111;5;476@20,useevent:2@40 -coop-test-events 1 -coop-test-regen 1' }
+            elseif ($Scenario -eq 'event') { '-coop-test-story gotopos:111;5;476@44,useevent:2@64 -coop-test-events 1 -coop-test-regen 1' }
             elseif ($Scenario -eq 'farloot') { '-coop-test-story gotopos:111;5;476@20,gotopos:486;15;474@75 -coop-test-loot look:280705368@1' }
             elseif ($Scenario -eq 'chestgold') { '-coop-test-regen 1 -coop-test-story gotopos:1416;24;318@15 -coop-test-loot look:-1525955765@1' }
             elseif ($Scenario -eq 'chestlid') { '-coop-test-regen 1 -coop-test-story gotopos:172;50;520@15 -coop-test-loot look:-281711968@1' }
             elseif ($Scenario -eq 'latejoin') { '-coop-test-story answer:TakeProtectTownQuest@30,answer:TakeHorseQuest@35 -coop-test-loot open@40,takeall@46' } else { '' }
 $h = Start-Process "$root\game\Gedonia.exe" -WorkingDirectory "$root\game" -PassThru -ArgumentList "$w $hostNet -coop-name Host $common -coop-dump 1 $hostTest"
 Start-Sleep $ClientDelay
+# Cutscenes wait for F from everyone, so this one runs without a friend.
+if ($Scenario -eq 'voicemute' -or $Scenario -eq 'viewvoice' -or $Scenario -eq 'fixsurvey' -or $Scenario -eq 'tooltips') { "transport=$Transport scenario=$Scenario case=$VoiceCase host=$($h.Id)"; return }
 $clientBot = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogClientSteps" }
+             elseif ($Scenario -eq 'questloop') { '-coop-test-story queststate:Get_a_horse@50,queststate:Get_a_horse@65,queststate:Get_a_horse@80,queststate:Get_a_horse@95,queststate:Get_a_horse@110' }
+             elseif ($Scenario -eq 'mountride') { '-coop-test-story lang:de@8,mountsummon:0@44,mountstate@46,mountstate@49,mountnear@50,mountride@53,mountstate@58,mountgo:1@62,mountstate@68,mountstate@75,mountgo:0@76,mountoff@78,mountstate@84,mountaway@86,mountstate@89,mountsummon:1@92,mountstate@97,mountaway@99,mountsummon:2@100,mountstate@105,mountaway@107,mountsummon:3@108,mountstate@113,mountaway@115,mountsummon:4@116,mountstate@121,mountaway@123,mountsummon:5@124,mountstate@129,mountaway@131,mountsummon:6@132,mountstate@137,mountaway@139,mountsummon:7@140,mountstate@145,mountaway@147,mountstate@150' }
+             elseif ($Scenario -eq 'spells') { '-coop-bot fight -coop-bot-delay 105 -coop-test-regen 1 -coop-test-story lockenemy@43,projslow:4@44,handstate@44,realcast:7@46,handstate@49,projslow:0@53,handstate@54,realcast:0@56,handstate@60,realcast:1@62,handstate@66,realcast:2@68,handstate@72,realcast:3@74,handstate@78,realcast:4@80,handstate@84,camyaw:90@86,shot:enemyseen@92,shot:enemyseen2@94,effectssum@96,effectssum@100,effectssum@160' }
+             elseif ($Scenario -eq 'woodevent') { '-coop-test-regen 1 -coop-test-story lang:de@8,gotoevent:Logging@44,eventstate:Logging@52,eventwood:Logging:16@55,gotospot:Logging@58,eventstate:Logging@62,shot:woodfriendbefore@60,eventstate:Logging@68,shot:woodafter@70,eventstate:Logging@85' }
+             elseif ($Scenario -eq 'doors') { '-coop-test-regen 1 -coop-test-story gotopos:701;33;618@44,nocompanions@52,doorlist@60,gotodoor@62,doorstate@64,doorstate@68,dooruse@70,doorstate@72,doorstate@74,doorrace:closed@76,doorstate@92,doorbesides@94,doorstate@109,doorstate@115,doorwalk:6@116,doorexit@123,doorstate@129,gotopos:486;15;474@135,doorstate@152,gotopos:701;33;618@165,doorstate@172,doorstate@185' }
+             elseif ($Scenario -eq 'doorsjoin') { '-coop-test-story gotopos:701;33;618@44,nocompanions@52,gotodoor@60,doorstate@62,doorstate@68' }
              elseif ($Scenario -eq 'scaling') { '-coop-bot fight -coop-bot-delay 30 -coop-test-regen 1 -coop-test-story scalelog@14,partyaccept@18,partyaccept@24,scalelog@32,scalelog@52,partyleave@60,scalelog@77,scalelog@102' }
+             elseif ($Scenario -eq 'chat') { '-coop-udp-loss 0.2 -coop-bot circle -coop-test-story chatprobe@55,chatprobe@58,chatopen@60,chatprobe@62,chattype:Hallo_vom_Client_<b>fett</b>@62,chatprobe@70,chatenter@71,chatprobe@73,chatprobe@76,chatburst:5@82,chatopen@86,chatlong@87,chatprobe@96,chatenter@97,chatopen@100,chattype:nicht_senden@101,chatesc@104,chatlog@125,shot:chathistory@126,chatopen@128,shot:chatfull@130,chatesc@132' }
              elseif ($Scenario -eq 'trade') { '-coop-test-story tradelog@14,tradeask@18,tradestack:0@22,tradeui@22,shot:tradeopen@25,tradeconfirm@26,tradelog@32,tradeask@36,tradeitem:0@41,tradeuse@44,tradelog@47,tradeask@50,tradegold:7@55,tradestall@56,tradeconfirm@58,tradeunstall@82,tradelog@83,tradeask@86,tradeitem:0@91,tradedrop@92,tradeconfirm@94,tradelog@104,tradeui@120,shot:tradeui@122,tradeui:off@124,tradelog@140' }
              elseif ($Scenario -eq 'party') { '-coop-test-regen 1 -coop-test-story xplog@14,xplog@19,partyaccept@25,partylog@30,maplog@30,shot:partyclient@33,xplog@45,partyleave@50,partylog@55,maplog@55,xplog@62,partyaccept@66,partylog@75,partyinvite@78,partylog@86,xplog@88' }
              elseif ($Scenario -eq 'effects') { '-coop-bot fight -coop-bot-delay 36 -coop-test-regen 1 -coop-test-strong 10 -coop-test-story intellect:8@14,xplog@15,shot:hosteffect@27,effectstate@28,effect:slash@32,effect:5@34,xplog@60,bodies@80,bodies@96,lootbody@98,bodies@100,xplog@100,effectstate@100' }
@@ -171,7 +223,7 @@ $clientBot = if ($Scenario -eq 'dialogue') { "-coop-test-story $DialogClientStep
              elseif ($Scenario -eq 'lossy') { '-coop-bot fight -coop-test-regen 1 -coop-udp-loss 0.2' }
              elseif ($Scenario -eq 'death') { '-coop-bot fight -coop-test-hp 20 -coop-test-reload 15' }
              elseif ($Scenario -eq 'companions') { '-coop-bot fight -coop-test-regen 1 -coop-test-story answer:BringButaBack@40 -coop-test-charisma 2' }
-             elseif ($Scenario -eq 'event') { '-coop-bot fight -coop-test-regen 1 -coop-test-strong 10 -coop-test-story gotopos:113;5;478@20,useevent:2@45,useevent:1@55 -coop-test-events 1' }
+             elseif ($Scenario -eq 'event') { '-coop-bot fight -coop-bot-delay 60 -coop-test-regen 1 -coop-test-strong 10 -coop-test-story gotopos:113;5;478@44,useevent:2@66,useevent:1@76 -coop-test-events 1' }
              elseif ($Scenario -eq 'farloot') { '-coop-test-loot look:280705368@1,open@45,takeall@51' }
              elseif ($Scenario -eq 'chestgold') { '-coop-test-regen 1 -coop-test-story gotopos:1418;24;320@15 -coop-test-loot look:-1525955765@1,open@40,take1@45,takeall@50' }
              elseif ($Scenario -eq 'chestlid') { '-coop-test-regen 1 -coop-test-story gotopos:174;50;522@15 -coop-test-loot look:-281711968@1,open@40' }

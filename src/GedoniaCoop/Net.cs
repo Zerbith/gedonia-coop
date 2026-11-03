@@ -21,6 +21,7 @@ namespace GedoniaCoop
         // back, so state hashes carry one-shot actions like attacks and rolls.
         public int[] LayerStates = new int[0];
         public float[] LayerTimes = new float[0];
+        public float[] LayerWeights = new float[0];
         public float[] Params = new float[0];
         // Test checks: the sender's own "Speed" value and the clip with the
         // highest weight on layer 0 (shows which way a blend tree went).
@@ -65,7 +66,7 @@ namespace GedoniaCoop
     public class Net : IDisposable
     {
         const ushort Magic = 0x4743; // "GC"
-        const byte Version = 16;
+        const byte Version = 19;
         public const byte ProtocolVersion = Version;
         const byte MsgState = 1;
         const byte MsgAppearance = 2;
@@ -79,7 +80,7 @@ namespace GedoniaCoop
             MsgWorldClock = 25, MsgTimeSkip = 26, MsgActorRoster = 27,
             MsgEventState = 28, MsgEventSpawn = 29, MsgEventObjective = 30, MsgEventComplete = 31, MsgEventUse = 32,
             MsgWorldState = 33, MsgProjectile = 34, MsgExpeditions = 35, MsgExpeditionStart = 36, MsgEventObject = 37, MsgEventObjSpawn = 38, MsgWorldStateRequest = 39, MsgTravellers = 40, MsgSounds = 41, MsgDialogue = 42, MsgXp = 43, MsgEffects = 44, MsgCutscene = 45, MsgForm = 46,
-            MsgParty = 47, MsgScale = 48, MsgTrade = 49;
+            MsgParty = 47, MsgScale = 48, MsgTrade = 49, MsgChat = 50, MsgMount = 51, MsgDoor = 52;
 
         public struct Message
         {
@@ -204,7 +205,7 @@ namespace GedoniaCoop
                 w.Write(s.Name ?? ""); w.Write(s.Scene ?? ""); w.Write(s.World ?? "");
                 w.Write(s.X); w.Write(s.Y); w.Write(s.Z); w.Write(s.Yaw);
                 w.Write((byte)s.LayerStates.Length);
-                for (int i = 0; i < s.LayerStates.Length; i++) { w.Write(s.LayerStates[i]); w.Write(s.LayerTimes[i]); }
+                for (int i = 0; i < s.LayerStates.Length; i++) { w.Write(s.LayerStates[i]); w.Write(s.LayerTimes[i]); w.Write(s.LayerWeights[i]); }
                 w.Write((byte)s.Params.Length);
                 foreach (float f in s.Params) w.Write(f);
                 w.Write(s.Speed); w.Write(s.Clip ?? ""); w.Write(s.WeaponFlags); w.Write(s.TravelSpeed); w.Write(s.Dead); w.Write(s.Stealth); w.Write(s.InDungeon);
@@ -264,8 +265,8 @@ namespace GedoniaCoop
                         s.Name = Plugin.CleanName(r.ReadString()); if (s.Name.Length == 0) s.Name = "Player"; s.Scene = r.ReadString(); s.World = r.ReadString();
                         s.X = r.ReadSingle(); s.Y = r.ReadSingle(); s.Z = r.ReadSingle(); s.Yaw = r.ReadSingle();
                         int layers = r.ReadByte();
-                        s.LayerStates = new int[layers]; s.LayerTimes = new float[layers];
-                        for (int i = 0; i < layers; i++) { s.LayerStates[i] = r.ReadInt32(); s.LayerTimes[i] = r.ReadSingle(); }
+                        s.LayerStates = new int[layers]; s.LayerTimes = new float[layers]; s.LayerWeights = new float[layers];
+                        for (int i = 0; i < layers; i++) { s.LayerStates[i] = r.ReadInt32(); s.LayerTimes[i] = r.ReadSingle(); s.LayerWeights[i] = r.ReadSingle(); }
                         s.Params = new float[r.ReadByte()];
                         for (int i = 0; i < s.Params.Length; i++) s.Params[i] = r.ReadSingle();
                         s.Speed = r.ReadSingle(); s.Clip = r.ReadString(); s.WeaponFlags = r.ReadByte(); s.TravelSpeed = r.ReadSingle(); s.Dead = r.ReadBoolean(); s.Stealth = r.ReadBoolean(); s.InDungeon = r.ReadBoolean();

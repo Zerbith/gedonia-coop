@@ -58,7 +58,7 @@ namespace GedoniaCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "gedonia.coop";
-        public const string Version = "0.8.1";
+        public const string Version = "0.9.4";
         const float SendInterval = 0.05f;
         const float AppearanceInterval = 1f;
         const float PeerTimeout = 5f;
@@ -88,6 +88,8 @@ namespace GedoniaCoop
         ScaleSync scale;
         TradeSync trade;
         Net tradeNet;
+        ChatSync chat;
+        Net chatNet;
         Net scaleNet;
         Net partyNet;
         XpSync xp;
@@ -99,7 +101,7 @@ namespace GedoniaCoop
         FormSync forms;
         Net formsNet;
         Net travellersNet;
-        ProjectileSync projectiles;
+        ProjectileSync projectiles; Net mountsNet, doorsNet; MountSync mounts; DoorSync doors;
         readonly RespawnStones respawn = new RespawnStones();
         ExpeditionSync expeditions;
         Net expeditionsNet;
@@ -133,6 +135,16 @@ namespace GedoniaCoop
         float testAcceptAfter = -1f, inviteSeenAt = -1f;
         readonly PlayerState local = new PlayerState();
         static Plugin self;
+        public static IEnumerable<Puppet> AllPuppets() { return self.puppets.Values; }
+
+        // Test logging, and a fix switched off for a control run (-coop-test-nofix mount,doors,...).
+        public static bool Verbose { get { return Arg(Environment.GetCommandLineArgs(), "-coop-test-story") != null; } }
+        static HashSet<string> noFix;
+        public static bool NoFix(string what)
+        {
+            if (noFix == null) noFix = new HashSet<string>((Arg(Environment.GetCommandLineArgs(), "-coop-test-nofix") ?? "").Split(','));
+            return noFix.Contains(what);
+        }
 
         // Whether a player is in the same hub world as we are (Gedonia,
         // NorthernKingdoms, UnchartedIslands: separate scenes whose coordinates
@@ -229,10 +241,15 @@ namespace GedoniaCoop
             Log.LogInfo("Data folder: " + Application.persistentDataPath);
 
             new Harmony(Guid).PatchAll();
+            ChatSync.Install();
             DialogueSync.VoteSeconds = Config.Bind("Dialogue", "VoteSeconds", 10f, "Shared conversations: seconds after the first vote until the leader's vote counts (0 = only when everyone agrees).").Value;
             DialogueSync.StartIndexing();
             VoiceOver.Enabled = Config.Bind("VoiceOver", "Enabled", true, "German voice-over for dialogues and quest texts (needs the plugins/voice-de folder and German as the mod's language).").Value;
-            VoiceOver.Volume = Mathf.Clamp01(Config.Bind("VoiceOver", "Volume", 1f, "Voice-over volume, 0..1.").Value);
+            ModOptions.VolumeEntry = Config.Bind("VoiceOver", "Volume", 1f, "Voice-over volume, 0..3 (1 = as recorded). Also a slider in the game's audio options.");
+            VoiceOver.Volume = Mathf.Clamp(ModOptions.VolumeEntry.Value, 0f, ModOptions.MaxVolume);
+            ModOptions.ViewEntry = Config.Bind("Graphics", "ViewDistance", 1f, "View distance on top of the game's landscape option, 1..2.5 (1 = as in the game). Also a slider in the game's graphics options.");
+            ModOptions.ViewFactor = Mathf.Clamp(ModOptions.ViewEntry.Value, 1f, ModOptions.MaxView);
+            ModOptions.Init();
             ScaleSync.Enabled = Config.Bind("Scaling", "Enabled", true, "Stronger enemies for groups (the host's settings count for everyone).").Value;
             ScaleSync.HealthPerExtra = Mathf.Max(0f, Config.Bind("Scaling", "HealthPerExtraPlayer", 0.5f, "Enemy health added per extra group member near it (0.5 = +50 %).").Value);
             ScaleSync.DamagePerExtra = Mathf.Max(0f, Config.Bind("Scaling", "DamagePerExtraPlayer", 0.2f, "Enemy damage added per extra group member near it (0.2 = +20 %).").Value);
@@ -265,6 +282,15 @@ namespace GedoniaCoop
             UdpTransport.SimulatedLoss = ParseFloat(Arg(args, "-coop-udp-loss"), 0f);
             if (UdpTransport.SimulatedLoss > 0f) Log.LogWarning("Test: dropping " + (UdpTransport.SimulatedLoss * 100f).ToString("F0") + "% of all UDP packets on send");
             testRegen = Arg(args, "-coop-test-regen") != null;
+            // Test copies only (checked in Awake): the game's "voices" option, set before anything reads it.
+            int testVoices, testLandscape;
+            if (testCopy && int.TryParse(Arg(args, "-coop-test-landscape") ?? "", out testLandscape)) { PlayerPrefs.SetInt("LandscapeOption", testLandscape); PlayerPrefs.Save(); Log.LogInfo("Test: option landscape=" + testLandscape); }
+            if (testCopy &&int.TryParse(Arg(args, "-coop-test-voices") ?? "", out testVoices))
+            {
+                PlayerPrefs.SetInt("voices", testVoices);
+                PlayerPrefs.Save();
+                Log.LogInfo("Test: option voices=" + testVoices);
+            }
             foreach (string step in (Arg(args, "-coop-test-clock") ?? "").Split(','))
             {
                 int at = step.LastIndexOf('@');
@@ -517,7 +543,7 @@ namespace GedoniaCoop
         void CheckHotkeys()
         {
             // F7: host a Steam lobby (when not already in a co-op session).
-            if (Input.GetKeyDown(KeyCode.F7) && (steamTransport == null || (!steamTransport.IsHost && !steamTransport.Joined)) &&
+            if (!ChatSync.Typing && Input.GetKeyDown(KeyCode.F7) && (steamTransport == null || (!steamTransport.IsHost && !steamTransport.Joined)) &&
                 (net == null || steamTransport != null))
             {
                 Log.LogInfo("F7: hosting via Steam");
@@ -525,7 +551,7 @@ namespace GedoniaCoop
             }
             // F8: in-game friends list with Invite buttons (works without the overlay).
             // F8: the co-op menu (same as the upper bar's co-op button).
-            if (Input.GetKeyDown(KeyCode.F8))
+            if (!ChatSync.Typing && Input.GetKeyDown(KeyCode.F8))
             {
                 if (ui.Open) ui.Close();
                 else if (SceneManager.GetActiveScene().name == "MainMenu") coopUi.JoinOpen = !coopUi.JoinOpen;
@@ -606,12 +632,14 @@ namespace GedoniaCoop
         {
             // The status lives in the co-op menu now; only a version clash is
             // worth a line on screen.
+            Event realEvent = ChatSync.BeginTestEvent();
             string text = null;
             if (net != null && net.OtherVersion != 0)
                 text = "<color=#ff8060><b>" + Lang.T("A player has a different mod version (protocol " + net.OtherVersion + ", ours " + Net.ProtocolVersion + "); everyone needs the same version.",
                     "Ein Spieler hat eine andere Mod-Version (Protokoll " + net.OtherVersion + ", unseres " + Net.ProtocolVersion + "); alle brauchen dieselbe Version.") + "</b></color>";
             ui.Draw(steamTransport, text, coopUi);
             CutsceneSync.DrawRing();
+            if (realEvent != null) Event.current = realEvent;
         }
 
         // Test-only expedition steps:
@@ -1289,6 +1317,12 @@ namespace GedoniaCoop
                 trade = new TradeSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) ? pp : null; }, () => puppets.Keys);
             }
             trade.Tick(now, inWorld);
+            if (chat == null || chatNet != net)
+            {
+                chatNet = net;
+                chat = new ChatSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) && pp.Latest != null ? pp.Latest.Name : null; }, () => puppets.Keys);
+            }
+            chat.Tick(inWorld);
             if (xp == null || xpNet != net)
             {
                 xpNet = net;
@@ -1331,6 +1365,18 @@ namespace GedoniaCoop
                 projectiles = new ProjectileSync(net);
             }
             projectiles.Tick(pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) ? pp : null; });
+            if (mounts == null || mountsNet != net)
+            {
+                mountsNet = net;
+                mounts = new MountSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) ? pp : null; }, () => puppets.Keys);
+            }
+            mounts.Tick(now);
+            if (doors == null || doorsNet != net)
+            {
+                doorsNet = net;
+                doors = new DoorSync(net, () => puppets.Values, () => puppets.Keys);
+            }
+            doors.Tick(now, inWorld);
 
             if (now >= nextStatus)
             {
@@ -1769,6 +1815,15 @@ namespace GedoniaCoop
                         im.minimap.SetActive(im.minimapNotCompass);
                         im.compass.SetActive(!im.minimapNotCompass);
                     }
+                    else if (step == "optionsdump") ModOptions.TestDump();
+                    else if (step.StartsWith("optionslide:")) { string[] a = step.Substring(12).Split('|'); ModOptions.TestSlide(a[0], ParseFloat(a[1], 0f)); }
+                    else if (step.StartsWith("optionsshow:")) ModOptions.TestShow(int.Parse(step.Substring(12)));
+                    else if (step == "viewstate") ModOptions.TestState();
+                    else if (step == "voicepeak") { Log.LogInfo("[voice] gain " + VoiceOver.Volume.ToString("F2") + " peak in " + VoiceGain.PeakIn.ToString("F3") + " out " + VoiceGain.PeakOut.ToString("F3") + " blocks " + VoiceGain.Blocks); VoiceGain.PeakIn = VoiceGain.PeakOut = 0f; }
+                    else if (step == "audiolog:on") GreetingMute.AudioLog = true;
+                    else if (step == "bark") GreetingMute.TestBark();
+                    else if (step == "merchanttalk") GreetingMute.TestMerchantTalk(player);
+                    else if (step == "merchantanswer") GreetingMute.TestMerchantAnswer();
                     else if (step == "lang:en") OnMenuGameLanguage();
                     else if (step == "lang:de") OnMenuGerman();
                     else if (step.StartsWith("window:"))
@@ -1926,11 +1981,65 @@ namespace GedoniaCoop
                         player.inStealth = step == "sneak:on" ? 1 : 0;
                         Log.LogInfo(Stamp() + " Test: sneaking " + (player.inStealth > 0));
                     }
+                    else if (MountSync.TestStep(step, player)) { }
+                    else if (step == "mountstate" && mounts != null) Log.LogInfo(Stamp() + " [mountstate] " + mounts.Describe());
+                    else if (ProjectileSync.TestStep(step, player)) { }
+                    else if (DoorSync.TestStep(step, player)) { }
+                    else if (WorldEventSync.TestStepEvent(step, player)) { }
+                    else if (step == "tooltipaudit") Translator.AuditTooltips();
+                    else if (step == "tooltipshow")
+                    {
+                        // The real hover on the weapon slot (the inventory must be open).
+                        Tooltip tip = InterfaceManager.instance.mainWeapTooltip;
+                        tip.EnterButton();
+                        Transform nameT = tip.tooltipLabel.transform.Find("name");
+                        Log.LogInfo(Stamp() + " [tooltipshow] name='" + (nameT != null ? nameT.GetComponent<UILabel>().text : "") + "' text='" + tip.tooltipLabel.text.Replace("\n", " | ") + "' english source='" + tip.text.Replace("\n", " | ") + "'");
+                    }
+                    else if (step.StartsWith("camyaw:")) CameraMovement.instance.parentTr.rotation = Quaternion.Euler(0f, float.Parse(step.Substring(7), CultureInfo.InvariantCulture), 0f);
+                    else if (step == "facefriend")
+                    {
+                        foreach (Puppet pf in puppets.Values)
+                        {
+                            Vector3 d = pf.Position - player.transform.position; d.y = 0f;
+                            if (d.sqrMagnitude > 0.01f) CameraMovement.instance.parentTr.rotation = Quaternion.LookRotation(d);
+                            Log.LogInfo(Stamp() + " Test: looking at player " + pf.Id + ", " + d.magnitude.ToString("F1") + " m away");
+                        }
+                    }
+                    else if (step.StartsWith("eventwood:"))
+                    {
+                        // Wood as chopping gives it: into the inventory, n pieces.
+                        string[] w = step.Split(':');
+                        WorldEventItemCollectSpot sp = null;
+                        foreach (WorldEventItemCollectSpot x in Resources.FindObjectsOfTypeAll<WorldEventItemCollectSpot>()) if (x.gameObject.scene.IsValid() && x.baseEvent != null && x.baseEvent.eventName == w[1]) sp = x;
+                        if (sp != null) for (int k = 0; k < int.Parse(w[2]); k++) player.AddItemToInventory(sp.itemToCollect, 1);
+                        Log.LogInfo(Stamp() + " Test: " + w[2] + " x " + (sp != null ? sp.itemToCollect.name : "nothing"));
+                    }
+                    else if (step == "enemyshot")
+                    {
+                        // A shot of the nearest enemy simulated here, as its ability fires one.
+                        GameObject shooter = enemies != null ? enemies.TestNearestSimulated(player.transform.position) : null;
+                        if (shooter == null) Log.LogInfo(Stamp() + " Test: no simulated enemy");
+                        else
+                        {
+                            GameObject shot = UnityEngine.Object.Instantiate(player.effectsGos[0], shooter.transform.position + Vector3.up * 1.5f, shooter.transform.rotation);
+                            foreach (Puppet pf in puppets.Values) shot.transform.LookAt(pf.Position + Vector3.up);
+                            Projectile sp = shot.GetComponent<Projectile>();
+                            sp.owner = shooter;
+                            sp.faction = shooter.GetComponent<NPC>().faction;
+                            sp.damage = 1;
+                            sp.speed = 6f; sp.life = 3000; // slow, for a screenshot of the copy
+                            Log.LogInfo(Stamp() + " Test: enemy '" + shooter.name + "' fired at " + shooter.transform.position.ToString("F1"));
+                        }
+                    }
+                    else if (step == "effectssum" && effects != null) Log.LogInfo(Stamp() + " [effects] " + effects.Summary() + " | " + ProjectileSync.Summary());
                     else if (PartySync.TestStep(step)) { }
                     else if (TradeSync.TestStep(step)) { }
+                    else if (ChatSync.TestStep(step, player.transform.position)) { }
                     else if (step == "scalelog" && scale != null) Log.LogInfo(Stamp() + " [scalecheck] " + scale.Report(player.transform.position));
                     else if (step.StartsWith("answer:")) StorySync.TestAnswer(step.Substring(7));
                     else if (step.StartsWith("unsynced:")) StorySync.TestUnsyncedQuest(step.Substring(9));
+                    else if (step.StartsWith("questobj:")) StorySync.TestUnsyncedObjective(step);
+                    else if (step.StartsWith("queststate:") && story != null) Log.LogInfo(Stamp() + " [queststate] " + story.TestQuestState(step.Substring(11)));
                 }
                 if (Arg(Environment.GetCommandLineArgs(), "-coop-test-events") != null && now >= nextEventReport)
                 {
@@ -2108,7 +2217,7 @@ namespace GedoniaCoop
                 " peers=" + puppets.Count + " tx=" + net.Sent + " rx=" + net.Received + " drop=" + net.Dropped +
                 (enemies != null ? " " + enemies.OwnedSummary() : "") + (events != null ? " " + events.Summary() : "") +
                 (story != null ? " " + story.Summary() : "") + (worldState != null ? " " + worldState.Summary() : "") +
-                (loot != null ? " " + loot.Summary() : "") + (clock != null ? " " + clock.Summary() : "") + (travellers != null ? " " + travellers.Summary() : "") + (sounds != null ? " " + sounds.Summary() : "") + (xp != null ? " " + xp.Summary() : "") + (party != null ? " " + party.Summary() : "") + (scale != null ? " " + scale.Summary() : "") + (trade != null ? " " + trade.Summary() : "") + (effects != null ? " " + effects.Summary() : "") + (cutscenes != null ? " " + cutscenes.Summary() : "") + (forms != null ? " " + forms.Summary() : "") + (dialogue != null ? " " + dialogue.Summary() : "") + " " + ProjectileSync.Summary() + (expeditions != null ? " " + expeditions.Summary() : "") + " " + respawn.Summary() +
+                (loot != null ? " " + loot.Summary() : "") + (clock != null ? " " + clock.Summary() : "") + (travellers != null ? " " + travellers.Summary() : "") + (sounds != null ? " " + sounds.Summary() : "") + (xp != null ? " " + xp.Summary() : "") + (party != null ? " " + party.Summary() : "") + (scale != null ? " " + scale.Summary() : "") + (trade != null ? " " + trade.Summary() : "") + (effects != null ? " " + effects.Summary() : "") + (cutscenes != null ? " " + cutscenes.Summary() : "") + (forms != null ? " " + forms.Summary() : "") + (dialogue != null ? " " + dialogue.Summary() : "") + " " + ProjectileSync.Summary() + (expeditions != null ? " " + expeditions.Summary() : "") + (mounts != null ? " " + mounts.Summary() : "") + (doors != null ? " " + doors.Summary() : "") + " " + respawn.Summary() +
                 (net.Transport is UdpTransport ? " " + ((UdpTransport)net.Transport).Stats : "");
             foreach (Puppet p in puppets.Values)
             {
@@ -2254,7 +2363,7 @@ namespace GedoniaCoop
                 // (PlayerScript.inputQeue = Attack1), the same path a mouse
                 // click takes, so the weapon is drawn and combos run as normal.
                 int n = (int)((now - botStart) / 9f) + 1;
-                if (cycle < 7f && botAttacks < n)
+                if (cycle < 7f && botAttacks < n && !ChatSync.Typing)
                 {
                     Traverse iq = Traverse.Create(player).Field("inputQeue");
                     iq.SetValue(Enum.ToObject(iq.GetValueType(), 1));

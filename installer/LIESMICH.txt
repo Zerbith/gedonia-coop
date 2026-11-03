@@ -45,9 +45,23 @@ Die Uebersetzung ist neu und noch nicht ueberall Korrektur gelesen. Was noch eng
 erscheint, wird gesammelt in  <Gedonia-Ordner>\BepInEx\config\gedonia-coop-missing-de.txt
 - diese Datei gerne mitschicken.
 Sprachausgabe: Auf Deutsch werden die Dialoge der NPCs und die Questtexte im Tagebuch
-vorgelesen, und die vertonten Zwischensequenzen sprechen Deutsch (KI-Stimmen, Ordner BepInEx\plugins\voice-de). Ausschalten oder leiser stellen:
-<Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt [VoiceOver] (Enabled, Volume).
-Die englischen Begruessungslaute der NPCs schaltet die Spieloption "Voices" ab.
+vorgelesen, und die vertonten Zwischensequenzen sprechen Deutsch (KI-Stimmen, Ordner BepInEx\plugins\voice-de).
+Lautstaerke: Regler "Sprachausgabe" (0-300 %) im Spiel unter Esc > Optionen > Audio. Bei mehr als 100 % kann in
+Zwischensequenzen, die Sprache und Musik ueber dieselbe Tonspur spielen, auch die Musik lauter werden.
+Ganz ausschalten: <Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt [VoiceOver], Enabled.
+Die kurzen englischen Sprueche beim Ansprechen eines NPCs sind auf Deutsch immer aus, die NPCs
+gruessen stattdessen mit den deutschen Stimmen. Die Spieloption "Voices" kann an bleiben: Sie schaltet
+auf Deutsch nur noch Originallaute ohne Worte ab (Tierlaute beim Ansprechen, Lacher und Schreie in
+Zwischensequenzen), die deutsche Vertonung bleibt immer hoerbar.
+
+
+WEITSICHT
+---------
+Regler "Weitsicht" (100-250 %) im Spiel unter Esc > Optionen > Grafik, wirkt nach wenigen Sekunden und gilt nur
+fuer deinen PC. Gegner und NPCs laden weiter in der normalen Entfernung. Mehr Weitsicht kostet Leistung und etwas
+Speicher: wenn das Spiel ruckelt, wieder herunterstellen. Auch einstellbar in
+<Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt [Graphics]. Die "Weltladeweite" im Hauptmenue
+bleibt die Spieloption und kommt dazu.
 
 
 SO SPIELT IHR ZUSAMMEN
@@ -63,9 +77,16 @@ Hauptmenue:
 Im Spiel: Co-op-Knopf rechts in der oberen Leiste (oder Taste F8):
   - Status (verbunden? wie viele Spieler? deine Heimnetz-Adresse),
   - "Freunde einladen" (Steam-Host): Freundesliste mit "Einladen".
+  - "Chat" (oder Taste Enter): siehe unten.
   - "Co-op verlassen".
   - Wer noch nicht verbunden ist, kann hier auch hosten oder beitreten.
 Steam-Einladungen kann man auch im Steam-Chat oder mit F9 annehmen (F10 = ablehnen).
+
+Chat: Enter oeffnet das Eingabefeld unten links, Enter sendet, Esc schliesst (ohne zu senden).
+Solange das Feld offen ist, reagiert dein Charakter nicht auf die Tastatur - er bleibt also
+stehen und ist dabei angreifbar. Neue Nachrichten erscheinen kurz unten links, mit Name und
+deiner Uhrzeit; bei offenem Feld siehst du den ganzen Verlauf dieser Sitzung. Hoechstens 200
+Zeichen pro Nachricht. Ist gerade ein Fenster des Spiels offen, geht der Chat ueber F8 auf.
 
 Jeder spielt mit seinem EIGENEN Spielstand. Die Welt und die Geschichte des HOSTS gelten.
 
@@ -83,7 +104,11 @@ Windows-Sicherheit > Firewall- & Netzwerkschutz > "Zugriff von App durch Firewal
 WAS GEMEINSAM IST
 -----------------
 - Ihr seht euch mit eurem Aussehen, eurer Ausruestung, Waffen, Pfeilen und Zaubern -
-  auch Zauber- und Kampfeffekte (Heilung, Elemente, Waffenspuren) der anderen.
+  auch Zauber- und Kampfeffekte (Heilung, Elemente, Waffenspuren) der anderen, und die
+  Geschosse und Zauber der Gegner.
+- Reittiere: Wer sein Reittier ruft oder darauf reitet, ist fuer die anderen damit zu sehen.
+- Tueren: Oeffnet oder schliesst einer eine Tuer, passiert das bei allen. Eine Tuer bleibt
+  offen, solange noch jemand von euch direkt daneben steht.
 - Gruppe: Im Co-op-Menue (F8) -> "Gruppe" ladet ihr andere ein (annehmen/ablehnen dort).
   Wer einlaedt, leitet die Gruppe und kann Mitglieder entfernen; jeder kann sie verlassen.
   Links seht ihr die Mitglieder mit Lebensbalken. Die Gruppe bestimmt: geteilte
@@ -161,7 +186,6 @@ WICHTIG ZU DEN SPIELSTAENDEN
 
 BEKANNTE GRENZEN (Testversion)
 ------------------------------
-- Ein Chat im Spiel kommt spaeter.
 - Die "Unerforschten Inseln" sind in dieser Spielversion nicht erreichbar.
 - Arena, Survival-Modus und Dungeon-Modus (eigene Spielmodi im Hauptmenue) sind nicht
   fuer Co-op abgestimmt - spielt im normalen Spiel ("Kampagne / offene Welt").

@@ -45,7 +45,7 @@ namespace GedoniaCoop
         [HarmonyLib.HarmonyPatch(typeof(VoiceOverClip), "CreatePlayable")]
         static class VoiceOverPatch
         {
-            static void Postfix(VoiceOverClip __instance, Playable __result)
+            static void Postfix(VoiceOverClip __instance, Playable __result, object[] __args)
             {
                 if (instance == null || !instance.loaded || !VoiceOver.Enabled || !Lang.German) return;
                 try
@@ -56,6 +56,7 @@ namespace GedoniaCoop
                     if (m != null) b.voice = m;
                     if (f != null) b.voiceFemale = f;
                     if (m != null || f != null) Plugin.Log.LogInfo("[voice] cutscene line German: " + (m != null ? m.name : "-") + " / " + (f != null ? f.name : "-"));
+                    if (m != null || f != null || instance.IsGerman(b.voice) || instance.IsGerman(b.voiceFemale)) AddGain(__args[1] as GameObject, __instance);
                 }
                 catch (Exception e) { Plugin.Log.LogWarning("[voice] cutscene clip: " + e.Message); }
             }
@@ -64,16 +65,53 @@ namespace GedoniaCoop
         [HarmonyLib.HarmonyPatch(typeof(AudioPlayableAsset), "CreatePlayable")]
         static class AudioAssetPatch
         {
-            static void Prefix(AudioPlayableAsset __instance)
+            static void Prefix(AudioPlayableAsset __instance, object[] __args)
             {
                 if (instance == null || !instance.loaded || !VoiceOver.Enabled || !Lang.German) return;
+                if (instance.IsGerman(__instance.clip)) AddGain(__args[1] as GameObject, __instance);
                 AudioClip de = instance.For(__instance.clip);
                 if (de == null) return;
+                AddGain(__args[1] as GameObject, __instance);
                 if (!instance.originals.ContainsKey(__instance)) instance.originals[__instance] = new AudioClip[] { __instance.clip };
                 __instance.clip = de;
                 Plugin.Log.LogInfo("[voice] cutscene audio German: " + de.name);
             }
         }
+
+        // VoiceOverBehaviour skips every clip while the game's "voices" option is off, and the German
+        // takes sit in those clips. A German take always plays (it is switched off with [VoiceOver]
+        // Enabled); originals without one (laughs, screams, groans) keep following the option.
+        // AudioPlayableAsset clips never looked at the option.
+        [HarmonyLib.HarmonyPatch(typeof(VoiceOverBehaviour), "ProcessFrame")]
+        static class OptionPatch
+        {
+            static void Prefix(VoiceOverBehaviour __instance, ref int ___voiceInteger)
+            {
+                if (___voiceInteger == 1 || instance == null || !instance.loaded) return;
+                if (instance.IsGerman(__instance.voice) || instance.IsGerman(__instance.voiceFemale)) ___voiceInteger = 1;
+            }
+        }
+
+        // The voice-over slider also reaches the source a German clip plays on. A track that shares its
+        // source with music or sounds gets those louder too.
+        static void AddGain(GameObject owner, PlayableAsset asset)
+        {
+            PlayableDirector dir = owner != null ? owner.GetComponent<PlayableDirector>() : null;
+            TimelineAsset t = dir != null ? dir.playableAsset as TimelineAsset : null;
+            if (t == null) return;
+            foreach (TrackAsset track in t.GetOutputTracks())
+                foreach (TimelineClip tc in track.GetClips())
+                {
+                    if (tc.asset != asset) continue;
+                    AudioSource s = dir.GetGenericBinding(track) as AudioSource;
+                    if (s == null || s.GetComponent<VoiceGain>() != null) return;
+                    s.gameObject.AddComponent<VoiceGain>();
+                    Plugin.Log.LogInfo("[voice] gain on source '" + s.name + "'");
+                    return;
+                }
+        }
+
+        bool IsGerman(AudioClip c) { return c != null && c.name.StartsWith("de_", StringComparison.Ordinal); }
 
         // Cutscenes made from prefabs come after the scene load: swap once more when one starts.
         [HarmonyLib.HarmonyPatch(typeof(TimelineCutsceneController), "StartCutscene")]

@@ -189,6 +189,7 @@ namespace GedoniaCoop
                 anim.applyRootMotion = false;
                 anim.fireEvents = false;
                 anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                QuietAnimators.Add(anim);
 
                 // Keep the model's offset from the player root.
                 clone.transform.SetParent(root.transform, false);
@@ -426,7 +427,8 @@ namespace GedoniaCoop
             bool hadParams = mirror.Params != null && mirror.Params.Count > 0;
             bool inTarget;
             if (!mirror.Apply(anim, Latest.LayerStates, Latest.LayerTimes, Latest.Params, now, out inTarget,
-                (l, target) => Plugin.Log.LogInfo("Puppet " + Id + " layer" + l + " -> " + target))) return;
+                (l, target) => Plugin.Log.LogInfo("Puppet " + Id + " layer" + l + " -> " + target),
+                Plugin.NoFix("mount") ? null : Latest.LayerWeights)) return;
             if (!hadParams)
             {
                 foreach (AnimatorControllerParameter p in mirror.Params) if (p.name == "Speed") hasSpeedParam = true;
@@ -436,6 +438,15 @@ namespace GedoniaCoop
             }
             samples++;
             if (inTarget) matches++;
+        }
+
+        // Test check: layer weights as this puppet plays them.
+        public string WeightsText()
+        {
+            if (anim == null) return "weights=-";
+            string s = "weights=";
+            for (int l = 0; l < anim.layerCount; l++) s += (l > 0 ? "/" : "") + anim.GetLayerWeight(l).ToString("F2");
+            return s + " layer0=" + anim.GetCurrentAnimatorStateInfo(0).fullPathHash;
         }
 
         // Fraction of frames where layer 0 was in the sender's state since the last call.

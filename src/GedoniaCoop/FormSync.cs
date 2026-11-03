@@ -182,7 +182,7 @@ namespace GedoniaCoop
                 go.name = "CoopForm " + player.effectsGos[index].name + " (" + sender + ")";
                 Copy c = new Copy { Go = go, Index = index, Target = at };
                 c.Anims = go.GetComponentsInChildren<Animator>(true);
-                foreach (Animator a in c.Anims) { a.applyRootMotion = false; a.fireEvents = false; a.cullingMode = AnimatorCullingMode.AlwaysAnimate; }
+                foreach (Animator a in c.Anims) { a.applyRootMotion = false; a.fireEvents = false; a.cullingMode = AnimatorCullingMode.AlwaysAnimate; QuietAnimators.Add(a); }
                 c.States = new int[c.Anims.Length][]; c.Times = new float[c.Anims.Length][]; c.Params = new float[c.Anims.Length][];
                 copies[sender] = c;
                 Built++;

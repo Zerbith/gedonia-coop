@@ -27,9 +27,12 @@ namespace GedoniaCoop
     // from an enemy's owner make their effects everywhere already.
     public class EffectSync
     {
-        const byte KParticle = 0, KSpawn = 1, KEnd = 2;
+        const byte KParticle = 0, KSpawn = 1, KEnd = 2, KStop = 3;
         const int MaxPerSecond = 40;
         const float CopyLifetime = 120f;
+        // The hand effects (PlayerScript.CastEffects) loop until the spell stops them. A lost
+        // stop mustn't leave one glowing for good.
+        const float LoopCap = 30f;
 
         static readonly HashSet<string> Visual = new HashSet<string>
         {
@@ -71,7 +74,11 @@ namespace GedoniaCoop
         bool outHasEnd;
         float nextFlush, windowStart;
 
-        public int SpawnsSent, ParticlesSent, EndsSent, Capped, SpawnsShown, ParticlesShown, Deduped, NoTarget, Skipped;
+        struct Shown { public int Index; public Vector3 Pos; public float At; }
+        readonly List<Shown> recentShown = new List<Shown>(); // effects copied here: a projectile copy's explosion isn't shown twice
+        readonly Dictionary<ParticleSystem, float> looping = new Dictionary<ParticleSystem, float>();
+
+        public int SpawnsSent, ParticlesSent, StopsSent, EndsSent, Capped, SpawnsShown, ParticlesShown, StopsShown, CapStops, Deduped, NoTarget, Skipped;
 
         public EffectSync(Net net, Func<int, Puppet> puppetOf, Func<IEnumerable<int>> peers)
         {
@@ -168,6 +175,34 @@ namespace GedoniaCoop
             ParticlesSent++;
         }
 
+        // Stop() of a particle system sent by OnParticlePlay. Reliable, as a lost one
+        // would leave the copy running (it may loop).
+        void OnParticleStop(ParticleSystem ps)
+        {
+            if (Replaying || !Connected || Plugin.NoFix("handglow")) return;
+            PlayerScript player = PlayerScript.instance;
+            if (player == null) return;
+            Transform t = ps.transform;
+            int actor;
+            Transform root;
+            if (t.IsChildOf(player.transform)) { actor = 0; root = player.transform; }
+            else if (EnemySync.Instance == null || !EnemySync.Instance.SimulatedActor(t, out actor, out root)) return;
+            for (Transform x = t; x != null && x != root; x = x.parent) if (x.name.EndsWith("(Clone)")) return;
+            string path = PathBelow(t, root);
+            string key = "stop|" + actor + "|" + path;
+            float now = Time.realtimeSinceStartup, last;
+            if (lastPlay.TryGetValue(key, out last) && now - last < 0.1f) return; // Stop() calls Stop(bool)
+            // Only what was started: the game stops idle hand effects all the time.
+            string playKey = actor + "|" + path;
+            float played;
+            if (!lastPlay.TryGetValue(playKey, out played)) return;
+            lastPlay[key] = now;
+            outW.Write(KStop); outW.Write(actor); outW.Write(path);
+            outCount++;
+            outHasEnd = true;
+            StopsSent++;
+        }
+
         void CapturePending()
         {
             if (pending.Count == 0) return;
@@ -200,6 +235,19 @@ namespace GedoniaCoop
                 outW.Write(KSpawn); outW.Write(id); outW.Write((short)p.Index); outW.Write(attach); outW.Write(actor); outW.Write(path);
                 outW.Write(pos.x); outW.Write(pos.y); outW.Write(pos.z);
                 outW.Write(rot.x); outW.Write(rot.y); outW.Write(rot.z); outW.Write(rot.w);
+                // Beam spells: the ability sets the line's ends by script (EnergySpread).
+                LineRenderer[] lines = p.Go.GetComponentsInChildren<LineRenderer>(true);
+                outW.Write((byte)Math.Min(lines.Length, 8));
+                for (int l = 0; l < lines.Length && l < 8; l++)
+                {
+                    int points = Math.Min(lines[l].positionCount, 32);
+                    outW.Write((byte)points);
+                    for (int q = 0; q < points; q++)
+                    {
+                        Vector3 v = lines[l].GetPosition(q);
+                        outW.Write(v.x); outW.Write(v.y); outW.Write(v.z);
+                    }
+                }
                 outCount++;
                 SpawnsSent++;
             }
@@ -256,6 +304,12 @@ namespace GedoniaCoop
                         string path = r.ReadString();
                         if (here) PlayParticle(m.Sender, actor, path);
                     }
+                    else if (kind == KStop)
+                    {
+                        int actor = r.ReadInt32();
+                        string path = r.ReadString();
+                        StopParticle(m.Sender, actor, path);
+                    }
                     else if (kind == KSpawn)
                     {
                         int id = r.ReadInt32();
@@ -265,7 +319,13 @@ namespace GedoniaCoop
                         string path = r.ReadString();
                         Vector3 pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
                         Quaternion rot = new Quaternion(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-                        if (here) Spawn(m.Sender, id, index, attach, actor, path, pos, rot);
+                        Vector3[][] lines = new Vector3[r.ReadByte()][];
+                        for (int l = 0; l < lines.Length; l++)
+                        {
+                            lines[l] = new Vector3[r.ReadByte()];
+                            for (int q = 0; q < lines[l].Length; q++) lines[l][q] = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                        }
+                        if (here) Spawn(m.Sender, id, index, attach, actor, path, pos, rot, lines);
                     }
                     else if (kind == KEnd)
                     {
@@ -300,9 +360,95 @@ namespace GedoniaCoop
             try { ps.Play(); }
             finally { Replaying = false; }
             ParticlesShown++;
+            if (ps.main.loop) looping[ps] = Time.realtimeSinceStartup;
         }
 
-        void Spawn(int sender, int id, int index, byte attach, int actor, string path, Vector3 pos, Quaternion rot)
+        void StopParticle(int sender, int actor, string path)
+        {
+            Transform t = Target(sender, actor, path);
+            ParticleSystem ps = t != null ? t.GetComponent<ParticleSystem>() : null;
+            if (ps == null) return;
+            Replaying = true;
+            try { ps.Stop(); }
+            finally { Replaying = false; }
+            looping.Remove(ps);
+            StopsShown++;
+        }
+
+        void CapLoops()
+        {
+            if (looping.Count == 0) return;
+            float now = Time.realtimeSinceStartup;
+            List<ParticleSystem> over = null;
+            foreach (KeyValuePair<ParticleSystem, float> kv in looping)
+                if (kv.Key == null || now - kv.Value > LoopCap) { if (over == null) over = new List<ParticleSystem>(); over.Add(kv.Key); }
+            if (over == null) return;
+            foreach (ParticleSystem ps in over)
+            {
+                looping.Remove(ps);
+                if (ps == null) continue;
+                Replaying = true;
+                try { ps.Stop(); }
+                finally { Replaying = false; }
+                CapStops++;
+            }
+        }
+
+        // Builds a copy that only looks; call with Replaying set and inside try/finally
+        // for the holder. Returns whether it ends by its own timer.
+        static GameObject StrippedCopy(GameObject prefab, Transform holder, out bool timed)
+        {
+            GameObject copy = Object.Instantiate(prefab, holder);
+            timed = false;
+            for (int pass = 0; pass < 3; pass++)
+            {
+                foreach (MonoBehaviour mb in copy.GetComponentsInChildren<MonoBehaviour>(true))
+                {
+                    if (mb == null) continue;
+                    if (Visual.Contains(mb.GetType().Name)) { if (mb is DestroyTimed) timed = true; continue; }
+                    Object.DestroyImmediate(mb);
+                }
+            }
+            foreach (Collider c in copy.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
+            return copy;
+        }
+
+        // A projectile copy's impact. The same effect may also arrive as a copied spawn
+        // when its prefab is in effectsGos (or just did): shown once.
+        public bool ShowExplosion(GameObject prefab, Vector3 pos)
+        {
+            Reindex();
+            int index;
+            bool known = indexOf.TryGetValue(prefab, out index);
+            float now = Time.realtimeSinceStartup;
+            if (known)
+            {
+                foreach (Shown s in recentShown)
+                    if (s.Index == index && now - s.At < 1f && Vector3.Distance(s.Pos, pos) < 4f) { Deduped++; return false; }
+                localSpawns.Add(new LocalSpawn { Index = index, Pos = pos, At = now });
+                recentShown.Add(new Shown { Index = index, Pos = pos, At = now });
+                if (recentShown.Count > 50) recentShown.RemoveRange(0, 25);
+            }
+            GameObject holder = new GameObject("CoopEffectHolder");
+            holder.SetActive(false);
+            Replaying = true;
+            try
+            {
+                bool timed;
+                GameObject copy = StrippedCopy(prefab, holder.transform, out timed);
+                copy.transform.SetParent(null, false);
+                SceneManager.MoveGameObjectToScene(copy, SceneManager.GetActiveScene());
+                copy.transform.position = pos;
+                copy.transform.rotation = prefab.transform.rotation;
+                copy.name = "CoopEffect " + prefab.name;
+                Object.Destroy(copy, timed ? CopyLifetime : 10f);
+                return true;
+            }
+            catch (Exception e) { Plugin.Log.LogWarning("Explosion '" + prefab.name + "' failed: " + e.Message); return false; }
+            finally { Replaying = false; Object.Destroy(holder); }
+        }
+
+        void Spawn(int sender, int id, int index, byte attach, int actor, string path, Vector3 pos, Quaternion rot, Vector3[][] lines)
         {
             PlayerScript player = PlayerScript.instance;
             if (player.effectsGos == null || index < 0 || index >= player.effectsGos.Length || player.effectsGos[index] == null) { Skipped++; return; }
@@ -324,18 +470,18 @@ namespace GedoniaCoop
             Replaying = true;
             try
             {
-                GameObject copy = Object.Instantiate(player.effectsGos[index], holder.transform);
-                bool timed = false;
-                for (int pass = 0; pass < 3; pass++)
+                bool timed;
+                GameObject copy = StrippedCopy(player.effectsGos[index], holder.transform, out timed);
+                LineRenderer[] lrs = copy.GetComponentsInChildren<LineRenderer>(true);
+                for (int l = 0; l < lrs.Length && l < lines.Length; l++)
                 {
-                    foreach (MonoBehaviour mb in copy.GetComponentsInChildren<MonoBehaviour>(true))
-                    {
-                        if (mb == null) continue;
-                        if (Visual.Contains(mb.GetType().Name)) { if (mb is DestroyTimed) timed = true; continue; }
-                        Object.DestroyImmediate(mb);
-                    }
+                    if (lines[l].Length == 0) continue;
+                    lrs[l].positionCount = lines[l].Length;
+                    lrs[l].SetPositions(lines[l]);
                 }
-                foreach (Collider c in copy.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
+                if (Plugin.Verbose && lrs.Length > 0) Plugin.Log.LogInfo(Plugin.Stamp() + " [effectcopy] beam '" + player.effectsGos[index].name + "' lines=" + lrs.Length + " points=" + (lines.Length > 0 ? lines[0].Length : 0) + (lines.Length > 0 && lines[0].Length > 1 ? " end " + lines[0][1].ToString("F1") : ""));
+                recentShown.Add(new Shown { Index = index, Pos = world, At = now });
+                if (recentShown.Count > 50) recentShown.RemoveRange(0, 25);
                 if (parent != null)
                 {
                     copy.transform.SetParent(parent, false);
@@ -371,6 +517,7 @@ namespace GedoniaCoop
             if (!inWorld) { pending.Clear(); pendingIds.Clear(); return; }
             CapturePending();
             CheckEnded();
+            CapLoops();
             if (now >= nextFlush)
             {
                 nextFlush = now + 0.05f;
@@ -387,7 +534,7 @@ namespace GedoniaCoop
 
         public string Summary()
         {
-            return "effects sent=" + SpawnsSent + "+" + ParticlesSent + "p ends=" + EndsSent + " capped=" + Capped + " shown=" + SpawnsShown + "+" + ParticlesShown + "p deduped=" + Deduped + " noTarget=" + NoTarget + " skipped=" + Skipped;
+            return "effects sent=" + SpawnsSent + "+" + ParticlesSent + "p stops=" + StopsSent + " ends=" + EndsSent + " capped=" + Capped + " shown=" + SpawnsShown + "+" + ParticlesShown + "p stopsShown=" + StopsShown + " capStops=" + CapStops + " deduped=" + Deduped + " noTarget=" + NoTarget + " skipped=" + Skipped;
         }
 
         // ---------- Harmony ----------
@@ -421,6 +568,24 @@ namespace GedoniaCoop
                 if (s == null || __instance == null) return;
                 try { s.OnParticlePlay(__instance); }
                 catch (Exception e) { Plugin.Log.LogWarning("Particle capture failed: " + e.Message); }
+            }
+        }
+
+        [HarmonyPatch]
+        static class StopPatch
+        {
+            static IEnumerable<MethodBase> TargetMethods()
+            {
+                foreach (MethodInfo m in typeof(ParticleSystem).GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                    if (m.Name == "Stop") yield return m;
+            }
+
+            static void Postfix(ParticleSystem __instance)
+            {
+                EffectSync s = Instance;
+                if (s == null || __instance == null) return;
+                try { s.OnParticleStop(__instance); }
+                catch (Exception e) { Plugin.Log.LogWarning("Particle stop capture failed: " + e.Message); }
             }
         }
 

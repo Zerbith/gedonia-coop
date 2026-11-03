@@ -126,6 +126,18 @@ namespace GedoniaCoop
         public bool HasEnemy(int id) { Enemy e; return byId.TryGetValue(id, out e) && e.Go != null; }
 
         // SoundSync: the shared enemy or follower this machine simulates that t belongs to.
+        // Test: the nearest living enemy this PC simulates.
+        public GameObject TestNearestSimulated(Vector3 pos)
+        {
+            GameObject best = null;
+            foreach (Enemy e in byId.Values)
+            {
+                if (e.Go == null || e.Npc == null || e.Npc.isDead || e.FixedOwner != 0 || e.Role != Role.Owner || !e.Go.activeInHierarchy) continue;
+                if (best == null || Vector3.Distance(e.Go.transform.position, pos) < Vector3.Distance(best.transform.position, pos)) best = e.Go;
+            }
+            return best;
+        }
+
         public bool SimulatedActor(Transform t, out int id, out Transform root)
         {
             id = 0; root = null;

@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.8.1). Tested with Steam build 16727998.
+Status: **playable alpha** (0.9.4). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -15,6 +15,10 @@ No game files are included; you need your own copy of the game.
   spell and combat effects (healing, elements, weapon trails), transformations (werewolf, blood demon,
   elemental forms), Steam name above the head, markers on world map, minimap and compass (group members), sounds
   (steps, swings, hits).
+- **Mounts:** a summoned mount and its rider are seen by everyone.
+- **Enemy shots and spells:** projectiles of enemies and followers fly on every screen (copies do no damage; hits go through the owner).
+- **Doors:** opened and closed for everyone; a door stays open while another player stands in it.
+- **Chat:** Enter opens a text chat for everyone in the session.
 - **Enemies:** the same enemies for everyone, one owner per enemy (hand-over when players split up),
   hits from everyone count.
 - **Groups:** invite players from the co-op menu (F8 -> Group); the inviter leads and can remove members.
@@ -41,6 +45,7 @@ No game files are included; you need your own copy of the game.
   the Northern Kingdoms.
 - **Dying:** respawn crystals in the villages instead of the reload-only death screen.
 - Pause menu does not stop the game in co-op.
+- **View distance:** an extra slider (Esc > Options > Graphics, 100-250 %) for scenery only; enemies and NPCs load as before.
 
 ## Install (players)
 

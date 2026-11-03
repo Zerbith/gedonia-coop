@@ -25,6 +25,7 @@ namespace GedoniaCoop
             public Regex Re;
             public string Key; // a literal piece the text must contain
             public bool Prefix;
+            public bool HasLineBreak;
             public string De;
         }
 
@@ -72,6 +73,7 @@ namespace GedoniaCoop
             exact = new Dictionary<string, string>();
             templates = new List<Template>();
             string[] files = Directory.GetFiles(PluginDir, "de-*.tsv");
+            if (Plugin.NoFix("tooltips")) files = Array.FindAll(files, f => !f.EndsWith("de-15-gear.tsv"));
             Array.Sort(files, StringComparer.Ordinal);
             foreach (string file in files)
                 foreach (string line in File.ReadAllLines(file, Encoding.UTF8))
@@ -108,6 +110,7 @@ namespace GedoniaCoop
             try { t.Re = new Regex(re.ToString(), RegexOptions.Singleline); } catch { return; }
             t.Prefix = parts[0].Length >= 2;
             t.Key = t.Prefix ? parts[0] : longest;
+            t.HasLineBreak = en.IndexOf('\n') >= 0;
             t.De = de;
             templates.Add(t);
         }
@@ -136,19 +139,14 @@ namespace GedoniaCoop
             string trimmed = en.Trim();
             if (trimmed.Length == 0) return null;
             if (trimmed != en && exact.TryGetValue(trimmed, out de)) return en.Replace(trimmed, de);
-            foreach (Template t in templates)
-            {
-                if (t.Prefix ? !en.StartsWith(t.Key, StringComparison.Ordinal) : en.IndexOf(t.Key, StringComparison.Ordinal) < 0) continue;
-                Match m = t.Re.Match(en);
-                if (!m.Success) continue;
-                return Slot.Replace(t.De, s =>
-                {
-                    Group g = m.Groups["s" + s.Groups[1].Value];
-                    if (!g.Success) return s.Value;
-                    string inner;
-                    return exact.TryGetValue(g.Value, out inner) ? inner : g.Value;
-                });
-            }
+            // Item stats come with spaces around them: the template is for the text inside.
+            if (trimmed != en) { de = German(trimmed); return de != null ? en.Replace(trimmed, de) : null; }
+            // Texts of several lines (item tooltips): a one-line template like "{0} gold" fits the
+            // whole text with everything before it as the slot, which stays English. So here
+            // only templates that have line breaks themselves; then the lines one by one.
+            bool lines = en.IndexOf('\n') >= 0 && !Plugin.NoFix("tooltips");
+            string found = FindTemplate(en, lines);
+            if (found != null) return found;
             // Built texts ("[FFCC00]Quest name[-]\nDescription"): the pieces
             // between colour tags and line breaks one by one.
             if (Pieces.IsMatch(en))
@@ -162,6 +160,36 @@ namespace GedoniaCoop
                     sb.Append(d ?? p);
                 }
                 if (any) return sb.ToString();
+            }
+            return lines ? FindTemplate(en, false) : null;
+        }
+
+        static string FindTemplate(string en, bool onlyWithLineBreaks)
+        {
+            foreach (Template t in templates)
+            {
+                if (onlyWithLineBreaks && !t.HasLineBreak) continue;
+                if (t.Prefix ? !en.StartsWith(t.Key, StringComparison.Ordinal) : en.IndexOf(t.Key, StringComparison.Ordinal) < 0) continue;
+                Match m = t.Re.Match(en);
+                if (!m.Success) continue;
+                // "{0}\n+{1} gold" (a reward line) also fits a tooltip of many lines, with most of them
+                // in a slot. Only as many lines as the template has itself.
+                if (onlyWithLineBreaks)
+                {
+                    bool tooMany = false;
+                    for (int g = 1; g < m.Groups.Count; g++) if (m.Groups[g].Value.IndexOf('\n') >= 0) tooMany = true;
+                    if (tooMany) continue;
+                }
+                return Slot.Replace(t.De, s =>
+                {
+                    Group g = m.Groups["s" + s.Groups[1].Value];
+                    if (!g.Success) return s.Value;
+                    string inner;
+                    if (exact.TryGetValue(g.Value, out inner)) return inner;
+                    // A slot of several lines ("{0}\nLevel {1} {2}" on an item) is text of its own.
+                    if (g.Value.IndexOf('\n') >= 0 && !Plugin.NoFix("tooltips")) return German(g.Value) ?? g.Value;
+                    return g.Value;
+                });
             }
             return null;
         }
@@ -406,6 +434,74 @@ namespace GedoniaCoop
                 for (int i = 1; i < s.Length; i++)
                     if (char.IsDigit(s[i]) || char.IsUpper(s[i])) return false;
             return true;
+        }
+
+        // Test step "tooltipaudit": the game's tooltip text of every item (weapons and armour
+        // also with each enchantment) through the tables. Lines that stay English go to
+        // BepInEx/coop-tooltip-missing.tsv as count<TAB>first item<TAB>line.
+        public static void AuditTooltips()
+        {
+            InterfaceManager im = InterfaceManager.instance;
+            Dictionary<string, int> counts = new Dictionary<string, int>();
+            Dictionary<string, string> first = new Dictionary<string, string>();
+            int items = 0, tips = 0, whole = 0, names = 0;
+            Action<Item, string> one = (item, data) =>
+            {
+                string name;
+                string text;
+                try { text = im.GetItemTooltip(item, out name, data); }
+                catch (Exception e) { Plugin.Log.LogWarning("[tooltip] '" + item.name + "' data '" + data + "': " + e.Message); return; }
+                tips++;
+                if (German(text) != null) whole++;
+                if (!string.IsNullOrEmpty(name) && German(name) == null && LooksLikeText(StripTags(name)) && German(StripTags(name)) == null) { names++; Note(counts, first, "NAME " + name, item.name); }
+                // What the label really gets: every source line that comes out unchanged stayed English.
+                string source = (text ?? "").Replace("\\n", "\n");
+                string shown = German(source) ?? source;
+                HashSet<string> shownLines = new HashSet<string>();
+                foreach (string piece in Pieces.Split(shown)) shownLines.Add(piece.Trim());
+                foreach (string piece in Pieces.Split(source))
+                {
+                    string p = piece.Trim();
+                    if (p.Length == 0 || Pieces.IsMatch(p) || !LooksLikeText(p) || germanTexts.Contains(p) || !shownLines.Contains(p)) continue;
+                    Note(counts, first, p, item.name);
+                }
+                // Lines changed only in part ("Sell price: 5 Gold").
+                foreach (string piece in Pieces.Split(shown))
+                {
+                    string p = piece.Trim();
+                    if (p.Length > 0 && !Pieces.IsMatch(p) && !germanTexts.Contains(p) && EnglishWords.IsMatch(p)) Note(counts, first, "PART " + p, item.name);
+                }
+            };
+            ItemsData d = ItemsData.instance;
+            foreach (Item[] arr in new Item[][] { d.weaponsDatabase, d.armorDatabase, d.consumablesData, d.booksData, d.basicItemsData, d.trophies, d.usableItemsData, d.notesDatabase, d.mapsDatabase })
+            {
+                if (arr == null) continue;
+                foreach (Item it in arr)
+                {
+                    if (it == null) continue;
+                    items++;
+                    one(it, "");
+                    if (it is WeaponItem || it is ArmorItem) for (int en = 0; en < 120; en++) one(it, en + "o");
+                }
+            }
+            string file = Path.Combine(Paths.BepInExRootPath, "coop-tooltip-missing.tsv");
+            List<string> lines = new List<string>();
+            foreach (KeyValuePair<string, int> kv in counts) lines.Add(kv.Value + "\t" + first[kv.Key] + "\t" + kv.Key.Replace("\n", "\\n"));
+            lines.Sort(StringComparer.Ordinal);
+            File.WriteAllLines(file, lines.ToArray(), Encoding.UTF8);
+            Plugin.Log.LogInfo(Plugin.Stamp() + " [tooltipaudit] items=" + items + " tooltips=" + tips + " whole=" + whole + " missing lines=" + counts.Count + " (names " + names + ") -> " + file);
+        }
+
+        static readonly Regex EnglishWords = new Regex(@"\b(the|of|to|by|and|with|for|your|you|price|requires|strength|agility|intellect|charisma|damage|armor|speed|health|stamina|chance|level|gold)\b", RegexOptions.IgnoreCase);
+
+        static string StripTags(string s) { return Pieces.Replace(s, ""); }
+
+        static void Note(Dictionary<string, int> counts, Dictionary<string, string> first, string line, string item)
+        {
+            int c;
+            counts.TryGetValue(line, out c);
+            counts[line] = c + 1;
+            if (c == 0) first[line] = item;
         }
 
         // Language switched in the main menu: the labels already on screen.

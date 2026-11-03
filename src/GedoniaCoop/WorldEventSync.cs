@@ -447,6 +447,77 @@ namespace GedoniaCoop
 
         public int EventIdOf(WorldEventBase ev) { return IdOf(ev); }
 
+        // Test steps for crafting events like 'Logging': eventdump[:name], gotoevent:name,
+        // eventuse:name:n, eventdeliver:name (into the phase's collect spot), eventstate:name.
+        static WorldEventBase ByName(string name)
+        {
+            foreach (WorldEventBase ev in Resources.FindObjectsOfTypeAll<WorldEventBase>())
+                if (ev != null && ev.gameObject.scene.IsValid() && ev.eventName == name) return ev;
+            return null;
+        }
+
+        static string ObjectList(GameObject[] gos)
+        {
+            List<string> o = new List<string>();
+            if (gos != null)
+                foreach (GameObject g in gos)
+                {
+                    if (g == null) { o.Add("null"); continue; }
+                    List<string> scripts = new List<string>();
+                    foreach (MonoBehaviour mb in g.GetComponentsInChildren<MonoBehaviour>(true)) if (mb != null && !scripts.Contains(mb.GetType().Name)) scripts.Add(mb.GetType().Name);
+                    o.Add("'" + g.name + "' active=" + g.activeSelf + " at " + g.transform.position.ToString("F0") + " {" + string.Join(",", scripts.ToArray()) + "}");
+                }
+            return string.Join("; ", o.ToArray());
+        }
+
+        public static string EventText(WorldEventBase ev)
+        {
+            string s = "'" + ev.eventName + "' at " + ev.transform.position.ToString("F0") + " active=" + ev.isActive + " phase=" + ev.currentPhase + " count=" + ev.currentCount + " type=" + ev.eventType + " finishMsg='" + ev.finishMessage + "'";
+            foreach (WorldEventBase.Phase p in ev.phases)
+                s += "\n   phase " + p.id + " +" + p.directionPlusAmount + " -" + p.directionMinusAmount + " finish=" + p.finish + " '" + p.description + "' objects: " + ObjectList(p.activatedGameObjects);
+            foreach (WorldEventItemCollectSpot spot in ev.GetComponentsInChildren<WorldEventItemCollectSpot>(true))
+                s += "\n   collect spot '" + spot.name + "' active=" + spot.gameObject.activeInHierarchy + " at " + spot.transform.position.ToString("F1") + " item=" + (spot.itemToCollect != null ? spot.itemToCollect.name : "-") + " toPhase=" + spot.plusToPhase;
+            return s;
+        }
+
+        public static bool TestStepEvent(string step, PlayerScript player)
+        {
+            string[] a = step.Split(':');
+            if (a[0] == "eventdump")
+            {
+                foreach (WorldEventBase ev in Resources.FindObjectsOfTypeAll<WorldEventBase>())
+                    if (ev != null && ev.gameObject.scene.IsValid() && (a.Length < 2 || ev.eventName == a[1])) Plugin.Log.LogInfo("[eventdump] " + EventText(ev));
+                return true;
+            }
+            if (a[0] != "gotoevent" && a[0] != "eventuse" && a[0] != "eventdeliver" && a[0] != "eventstate" && a[0] != "gotospot") return false;
+            WorldEventBase e = ByName(a[1]);
+            if (e == null) { Plugin.Log.LogWarning("Test: no event '" + a[1] + "'"); return true; }
+            if (a[0] == "eventstate") Plugin.Log.LogInfo(Plugin.Stamp() + " [eventstate] " + EventText(e) + "\n   gold=" + player.gold + " xp=" + player.experience);
+            else if (a[0] == "gotoevent" || a[0] == "gotospot")
+            {
+                Vector3 to = e.transform.position;
+                if (a[0] == "gotospot")
+                    foreach (WorldEventItemCollectSpot spot in e.GetComponentsInChildren<WorldEventItemCollectSpot>(true)) to = spot.transform.position;
+                to += Vector3.up * 1.5f;
+                player._char.enabled = false;
+                player.transform.position = to;
+                player._char.enabled = true;
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Test: at event '" + e.eventName + "' " + to.ToString("F1"));
+            }
+            else if (a[0] == "eventuse") TestUse(e, int.Parse(a[2]));
+            else if (a[0] == "eventdeliver")
+            {
+                // What walking into the circle does (needs the Player tag's collider).
+                foreach (WorldEventItemCollectSpot spot in e.GetComponentsInChildren<WorldEventItemCollectSpot>(false))
+                {
+                    int before = e.currentCount;
+                    spot.OnTriggerEnter(player.GetComponent<Collider>());
+                    Plugin.Log.LogInfo(Plugin.Stamp() + " Test: delivered to spot '" + spot.name + "': count " + before + " -> " + e.currentCount);
+                }
+            }
+            return true;
+        }
+
         // ---------- destructible and pickable event objects ----------
         // A crystal smashed or a tablet picked up on one machine must be gone
         // on the others too, or it could be smashed or delivered - and
@@ -751,11 +822,14 @@ namespace GedoniaCoop
                     if (ev.currentPhase != phase)
                     {
                         // Same switch as CompleteEventObjective does on a phase change.
+                        // Not for a finished event: the owner's last state can come after the
+                        // completion, and must not switch the last phase's objects on again.
+                        bool finished = !Plugin.NoFix("woodevent") && (!ev.isActive || !active);
                         foreach (WorldEventBase.Phase p in ev.phases)
                         {
                             if (p.activatedGameObjects == null) continue;
                             if (p.id == ev.currentPhase) foreach (GameObject g in p.activatedGameObjects) if (g != null && g.GetComponent<NPC>() == null) g.SetActive(false);
-                            if (p.id == phase) foreach (GameObject g in p.activatedGameObjects) if (g != null) g.SetActive(true);
+                            if (p.id == phase && !finished) foreach (GameObject g in p.activatedGameObjects) if (g != null) g.SetActive(true);
                         }
                         Plugin.Log.LogInfo(Plugin.Stamp() + " Event '" + ev.eventName + "' phase " + ev.currentPhase + " -> " + phase + " (owner's)");
                         ShowPhase(ev, phase);
@@ -823,6 +897,20 @@ namespace GedoniaCoop
         void Complete(WorldEventBase ev)
         {
             if (!ev.isActive) return;
+            // The owner's CompleteEventObjective switches off the last phase's objects
+            // before it calls CompleteEvent (on the way up, as the game does; not when
+            // the count ran out downwards), so here too: a delivery circle stayed otherwise.
+            if (ev.currentCount >= 0 && !Plugin.NoFix("woodevent"))
+            {
+                int off = 0;
+                foreach (WorldEventBase.Phase p in ev.phases)
+                {
+                    if (p.id != ev.currentPhase || p.activatedGameObjects == null) continue;
+                    foreach (GameObject g in p.activatedGameObjects)
+                        if (g != null && g.GetComponent<NPC>() == null && g.activeSelf) { g.SetActive(false); off++; }
+                }
+                if (off > 0) Plugin.Log.LogInfo(Plugin.Stamp() + " Event '" + ev.eventName + "': " + off + " object(s) of the last phase switched off");
+            }
             applying = true;
             try { completeEvent.Invoke(ev, null); Plugin.Log.LogInfo(Plugin.Stamp() + " Event '" + ev.eventName + "' completed (its owner did): reward here too"); }
             catch (Exception e) { Plugin.Log.LogError("Completing event '" + ev.eventName + "' failed: " + e); }

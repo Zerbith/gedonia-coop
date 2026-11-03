@@ -116,6 +116,9 @@ namespace GedoniaCoop
         {
             static void Postfix(AudioSource __instance, AudioClip clip, float volumeScale)
             {
+                if (GreetingMute.AudioLog && clip != null && __instance != null)
+                    Plugin.Log.LogInfo("[audio] oneshot " + clip.name + " on " + __instance.name + (__instance.GetComponent<Camera>() != null ? " (camera)" : "") +
+                        (PlayerScript.instance != null && __instance.transform.IsChildOf(PlayerScript.instance.transform) ? " (player)" : ""));
                 SoundSync s = Instance;
                 if (s == null || clip == null || __instance == null) return;
                 try { s.OnLocalPlay(__instance, clip, volumeScale); }

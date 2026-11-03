@@ -275,6 +275,7 @@ namespace GedoniaCoop
             bool down = Time.realtimeSinceStartup < TestHoldUntil;
             try { if (!down && vp_Input.Instance != null) down = vp_Input.Instance.DoGetButton("Interact"); } catch (Exception) { }
             if (!down) down = Input.GetKey(KeyCode.F);
+            if (ChatSync.Typing) down = false; // an "f" in a chat message is no confirmation
             // Let go too early: the ring empties again.
             hold = down ? hold + dt / HoldSeconds : Mathf.Max(0f, hold - dt * 3f);
             if (hold >= 1f) { hold = 1f; Confirm(); }

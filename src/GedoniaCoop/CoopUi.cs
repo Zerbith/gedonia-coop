@@ -9,7 +9,7 @@ namespace GedoniaCoop
     //  - main menu: "Deutsch" under the language buttons, "Host co-op" and
     //    "Join co-op" above "Mods" (join lists Steam friends in a co-op lobby);
     //  - in game: a co-op button at the end of the upper bar (also F8) with a
-    //    small menu: status, invite friends, host, leave, chat (later).
+    //    small menu: status, invite friends, host, leave, chat.
     // Clicks reach the plugin through EventDelegates on its public On* methods.
     public class CoopUi
     {
@@ -56,7 +56,8 @@ namespace GedoniaCoop
             }
             if (!JoinOpen && lanSearch != null) { lanSearch.Dispose(); lanSearch = null; }
             if (lanSearch != null && now >= nextLanProbe) { nextLanProbe = now + 2f; lanSearch.Probe(); }
-            bool open = JoinOpen || MenuOpen || HostOpen || ExtraOpen;
+            if (ChatSync.Instance != null && !plugin.CoopActive) ChatSync.Instance.Close();
+            bool open = JoinOpen || MenuOpen || HostOpen || ExtraOpen || ChatSync.Typing;
             bool over = open && panelOnScreen.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
             if (over != shielding) { shielding = over; UICamera.ignoreAllEvents = over; }
             // In play the game hides and locks the cursor; with the menu open
@@ -206,6 +207,16 @@ namespace GedoniaCoop
                 note.normal.textColor = Color.white;
             }
             float sw = Screen.width / scale;
+            ChatSync chat = ChatSync.Instance;
+            if (chat != null && plugin.CoopActive)
+            {
+                chat.Draw(sw, Screen.height / scale, panel);
+                if (ChatSync.Typing)
+                {
+                    Rect a = chat.PanelRect;
+                    panelOnScreen = new Rect(a.x * scale, a.y * scale, a.width * scale, a.height * scale);
+                }
+            }
             if (Note.Length > 0)
                 GUI.Box(new Rect(sw / 2f - 300f, 90f, 600f, 60f), Note, note);
             if (JoinOpen) DrawJoin(sw, scale);
@@ -324,6 +335,7 @@ namespace GedoniaCoop
                     string label = Lang.T("Trade", "Handeln") + (asks > 0 ? Lang.T(" (" + asks + " request)", " (" + asks + " Anfrage)") : "");
                     if (GUILayout.Button(label)) { MenuOpen = false; TradeSync.Instance.Open = true; }
                 }
+                if (ChatSync.Instance != null && GUILayout.Button(Lang.T("Chat (Enter)", "Chat (Enter)"))) { MenuOpen = false; ChatSync.Instance.RequestOpen(); }
                 if (GUILayout.Button(Lang.T("Leave co-op", "Co-op verlassen"))) { MenuOpen = false; plugin.CoopLeave(); }
             }
             else
@@ -332,9 +344,6 @@ namespace GedoniaCoop
                 if (GUILayout.Button(Lang.T("Host in the home network (LAN)", "Im Heimnetz hosten (LAN)"))) { MenuOpen = false; plugin.LanHost(); }
                 if (GUILayout.Button(Lang.T("Join ...", "Beitreten ..."))) { MenuOpen = false; JoinOpen = true; }
             }
-            GUI.enabled = false;
-            GUILayout.Button(Lang.T("Chat (coming later)", "Chat (kommt später)"));
-            GUI.enabled = true;
             if (GUILayout.Button(Lang.T("Close", "Schließen"))) MenuOpen = false;
             GUILayout.EndArea();
         }

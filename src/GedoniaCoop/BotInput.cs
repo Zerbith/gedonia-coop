@@ -49,7 +49,7 @@ namespace GedoniaCoop
         {
             static bool Prefix(string button, ref bool __result)
             {
-                if (!Active || button != "Secondary" || !HoldSecondary) return true;
+                if (!Active || ChatSync.Typing || button != "Secondary" || !HoldSecondary) return true;
                 __result = true;
                 return false;
             }
@@ -60,6 +60,7 @@ namespace GedoniaCoop
         {
             static bool Prefix(string button, ref bool __result)
             {
+                if (ChatSync.Typing) return true;
                 if (button == "Interact" && InteractPending) { InteractPending = false; __result = true; return false; }
                 if (!Active) return true;
                 if (button == "Attack" && attackPending) { attackPending = false; __result = true; return false; }
@@ -73,7 +74,7 @@ namespace GedoniaCoop
         {
             static bool Prefix(string axis, ref float __result)
             {
-                if (!Active) return true;
+                if (!Active || ChatSync.Typing) return true;
                 if (axis == "Horizontal") { __result = Horizontal; return false; }
                 if (axis == "Vertical") { __result = Vertical; return false; }
                 return true;
