@@ -331,34 +331,33 @@ namespace GedoniaCoop
             float w = 420f, h = 150f + Mathf.Max(1, others.Count) * 30f + invitesForMe.Count * 30f;
             Rect area = new Rect(sw - w - 30f, 200f, w, h);
             PanelRect = area;
-            GUI.Box(area, "", panel);
-            GUI.Box(area, Lang.T("Group", "Gruppe"));
+            GameSkin.Window(area, Lang.T("Group", "Gruppe"), panel);
             GUILayout.BeginArea(new Rect(area.x + 10f, area.y + 28f, area.width - 20f, area.height - 34f));
-            GUILayout.Label(mine == null ? Lang.T("You are not in a group.", "Du bist in keiner Gruppe.")
+            GameSkin.LLabel(mine == null ? Lang.T("You are not in a group.", "Du bist in keiner Gruppe.")
                 : Lang.T("Your group: ", "Deine Gruppe: ") + Describe(mine) + Lang.T("  (* leads)", "  (* leitet)"));
             foreach (int inviter in new List<int>(invitesForMe.Keys))
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label(Lang.T("Invitation from ", "Einladung von ") + NameOf(inviter), GUILayout.Width(200f));
-                if (GUILayout.Button(Lang.T("Accept", "Annehmen"), GUILayout.Width(90f))) Answer(inviter, true);
-                if (GUILayout.Button(Lang.T("Decline", "Ablehnen"), GUILayout.Width(90f))) Answer(inviter, false);
+                GameSkin.LLabel(Lang.T("Invitation from ", "Einladung von ") + NameOf(inviter), GUILayout.Width(200f));
+                if (GameSkin.LButton(Lang.T("Accept", "Annehmen"), GUILayout.Width(90f))) Answer(inviter, true);
+                if (GameSkin.LButton(Lang.T("Decline", "Ablehnen"), GUILayout.Width(90f))) Answer(inviter, false);
                 GUILayout.EndHorizontal();
             }
-            if (others.Count == 0) GUILayout.Label(Lang.T("No other players.", "Keine anderen Spieler."));
+            if (others.Count == 0) GameSkin.LLabel(Lang.T("No other players.", "Keine anderen Spieler."));
             foreach (int p in others)
             {
                 GUILayout.BeginHorizontal();
                 Group theirs = GroupOf(p);
                 string where = theirs == null ? "" : theirs == mine ? Lang.T(" (in your group)", " (in deiner Gruppe)") : Lang.T(" (other group)", " (andere Gruppe)");
-                GUILayout.Label(NameOf(p) + where, GUILayout.Width(250f));
-                if (theirs == null && lead && GUILayout.Button(Lang.T("Invite", "Einladen"), GUILayout.Width(130f))) Invite(p);
-                else if (theirs != null && theirs == mine && mine.Members[0] == Me && GUILayout.Button(Lang.T("Remove", "Entfernen"), GUILayout.Width(130f))) Kick(p);
+                GameSkin.LLabel(NameOf(p) + where, GUILayout.Width(250f));
+                if (theirs == null && lead && GameSkin.LButton(Lang.T("Invite", "Einladen"), GUILayout.Width(130f))) Invite(p);
+                else if (theirs != null && theirs == mine && mine.Members[0] == Me && GameSkin.LButton(Lang.T("Remove", "Entfernen"), GUILayout.Width(130f))) Kick(p);
                 GUILayout.EndHorizontal();
             }
             GUILayout.FlexibleSpace();
             GUILayout.BeginHorizontal();
-            if (mine != null && GUILayout.Button(Lang.T("Leave group", "Gruppe verlassen"))) Leave();
-            if (GUILayout.Button(Lang.T("Close", "Schließen"))) Open = false;
+            if (mine != null && GameSkin.LButton(Lang.T("Leave group", "Gruppe verlassen"))) Leave();
+            if (GameSkin.LButton(Lang.T("Close", "Schließen"))) Open = false;
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
@@ -370,6 +369,8 @@ namespace GedoniaCoop
         {
             Group mine = GroupOf(Me);
             if (mine == null) return;
+            GameSkin.Init();
+            if (GameSkin.Ready) { DrawGameFrames(mine); return; }
             if (white == null) { white = new Texture2D(1, 1); white.SetPixel(0, 0, Color.white); white.Apply(); }
             float y = 380f; // below the companion list at the top left
             foreach (int p in mine.Members)
@@ -394,8 +395,72 @@ namespace GedoniaCoop
             }
         }
 
+        // Frames built like the game's companion frames (PartyMemberBg with the
+        // portrait ring, red health bar, name above), stacked under them. Sizes in
+        // game pixels, measured on the companion frames at 1920x1440.
+        float companionsBottom = -1f, companionsAt;
+        Transform companionsRoot;
+        GUIStyle frameName, frameSmall;
+
+        // Lowest screen pixel (from the top) of the companion list, rechecked every second.
+        float CompanionsBottom()
+        {
+            if (Time.realtimeSinceStartup < companionsAt && companionsBottom >= 0f) return companionsBottom;
+            companionsAt = Time.realtimeSinceStartup + 1f;
+            companionsBottom = 40f;
+            if (companionsRoot == null)
+            {
+                GameObject g = GameObject.Find("GameInterface/Camera/MainInterface/Companions");
+                if (g != null) companionsRoot = g.transform;
+            }
+            if (companionsRoot == null) return companionsBottom;
+            foreach (UIWidget w in companionsRoot.GetComponentsInChildren<UIWidget>(false))
+            {
+                if (w.transform == companionsRoot || !w.enabled || w.finalAlpha <= 0.01f) continue;
+                Camera cam = NGUITools.FindCameraForLayer(w.gameObject.layer);
+                if (cam == null) continue;
+                float bottom = Screen.height - cam.WorldToScreenPoint(w.worldCorners[0]).y;
+                if (bottom > companionsBottom && bottom < Screen.height * 0.8f) companionsBottom = bottom;
+            }
+            return companionsBottom;
+        }
+
+        void DrawGameFrames(Group mine)
+        {
+            float k = 1f / InviteUi.Scale; // one game pixel in IMGUI units
+            if (frameName == null)
+            {
+                frameName = new GUIStyle(GameSkin.LabelStyle) { wordWrap = false, fontSize = 14, alignment = TextAnchor.MiddleLeft };
+                frameName.padding = new RectOffset(0, 0, 0, 0);
+                frameSmall = new GUIStyle(frameName) { fontSize = 11, alignment = TextAnchor.MiddleCenter };
+            }
+            float y = (CompanionsBottom() + 14f) * k;
+            foreach (int p in mine.Members)
+            {
+                if (p == Me) continue;
+                Puppet pp = puppetOf(p);
+                PlayerState s = pp != null ? pp.Latest : null;
+                bool lead = p == mine.Members[0];
+                Rect bg = new Rect(15f * k, y + 22f * k, 232f * k, 80f * k);
+                GameSkin.Label(new Rect(bg.x + 62f * k, y, 200f * k, 22f * k), NameOf(p), frameName.Apply(lead ? GameSkin.Gold : GameSkin.Cream));
+                GameSkin.Draw9(bg, "PartyMemberBg");
+                bool dead = s != null && s.Dead;
+                Rect ring = new Rect(bg.x + 9.4f * k, bg.y + 7f * k, 59f * k, 59f * k);
+                Vector2 icon = GameSkin.SpriteSize("UpperPanelCharIcon") * 1.3f;
+                GameSkin.DrawSprite(new Rect(ring.center.x - icon.x / 2f, ring.center.y - icon.y / 2f, icon.x, icon.y), "UpperPanelCharIcon", dead ? Color.gray : Color.white);
+                GameSkin.Draw9(ring, "PartyMemberPortraitFG");
+                float frac = s != null && s.MaxHealth > 0 ? Mathf.Clamp01((float)s.Health / s.MaxHealth) : 0f;
+                Rect bar = new Rect(bg.x + 78f * k, bg.y + 22f * k, 126f * k, 15f * k);
+                if (frac > 0f) GameSkin.Draw9(new Rect(bar.x, bar.y, bar.width * frac, bar.height), "Bright", dead ? Color.gray : new Color(1f, 0.206f, 0.206f));
+                if (s != null) GameSkin.Label(bar, s.Health + "/" + s.MaxHealth, frameSmall.Apply(Color.white));
+                string where = s == null || !Plugin.SameWorld(p) ? Lang.T("elsewhere", "anderswo") : s.InDungeon ? Lang.T("in a dungeon", "im Dungeon") : dead ? Lang.T("dead", "tot") : lead ? Lang.T("leads the group", "leitet die Gruppe") : "";
+                if (where.Length > 0) GameSkin.Label(new Rect(bar.x, bg.y + 46f * k, bar.width, 20f * k), where, frameSmall.Apply(GameSkin.Cream));
+                y += 104f * k;
+            }
+        }
+
         // ---------- test steps ----------
-        //   partyinvite       invite the first other player
+        //   partyinvite      invite the first other player
         //   partyaccept       accept the first invitation
         //   partydecline      decline the first invitation
         //   partyleave        leave our group

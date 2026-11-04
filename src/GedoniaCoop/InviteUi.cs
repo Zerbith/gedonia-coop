@@ -156,18 +156,18 @@ namespace GedoniaCoop
                 GUIContent c = new GUIContent(status);
                 float w = Mathf.Min(statusStyle.CalcSize(c).x + 2f, sw * 0.28f);
                 float h = statusStyle.CalcHeight(c, w);
-                GUI.Label(new Rect(8f, sh - h - 8f, w, h), c, statusStyle);
+                GameSkin.Label(new Rect(8f, sh - h - 8f, w, h), c, statusStyle);
             }
-            if (RespawnStones.Banner.Length > 0)
+            if (RespawnStones.Banner.Length > 0 && !RespawnStones.CountdownShown)
             {
                 promptStyle.fontSize = 20;
-                GUI.Label(new Rect(sw / 2f - 300f, sh * 0.72f, 600f, 56f), RespawnStones.Banner, promptStyle); // below the death screen's buttons
+                GameSkin.Plate(new Rect(sw / 2f - 300f, sh * 0.72f, 600f, 56f), RespawnStones.Banner, promptStyle); // below the death screen's buttons
             }
             if (t != null && t.InviteLobby != 0)
             {
                 promptStyle.fontSize = 16;
                 string msg = "<b>" + t.InviteFromName + "</b> invited you to Gedonia co-op\n<b>F9</b> join      <b>F10</b> ignore";
-                GUI.Label(new Rect(sw / 2f - 230f, sh * 0.16f, 460f, 58f), msg, promptStyle);
+                GameSkin.Plate(new Rect(sw / 2f - 230f, sh * 0.16f, 460f, 58f), msg, promptStyle);
             }
             if (t != null && Open) DrawPanel(t, sw, sh, scale);
             if (coop != null) coop.Draw(scale, panelStyle);
@@ -179,24 +179,23 @@ namespace GedoniaCoop
             float w = 380f, h = Mathf.Min(120f + friends.Count * 28f, sh - 80f);
             Rect area = new Rect(sw - w - 20f, 60f, w, h);
             panelOnScreen = new Rect(area.x * scale, area.y * scale, area.width * scale, area.height * scale);
-            GUI.Box(area, "", panelStyle); // opaque: the quest tracker sits behind it
-            GUI.Box(area, Lang.T("Invite friends to co-op   (Esc closes)", "Freunde zu Co-op einladen   (Esc schließt)"));
+            GameSkin.Window(area, Lang.T("Invite friends to co-op   (Esc closes)", "Freunde zu Co-op einladen   (Esc schließt)"), panelStyle);
             GUILayout.BeginArea(new Rect(area.x + 10f, area.y + 26f, area.width - 20f, area.height - 32f));
-            if (friends.Count == 0) GUILayout.Label(Lang.T("No Steam friends online.", "Keine Steam-Freunde online."));
-            scroll = GUILayout.BeginScrollView(scroll);
+            if (friends.Count == 0) GameSkin.LLabel(Lang.T("No Steam friends online.", "Keine Steam-Freunde online."));
+            scroll = GameSkin.BeginScroll(scroll);
             foreach (FriendInfo f in friends)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label(f.Name + (f.InGedonia ? Lang.T("   (playing Gedonia)", "   (spielt Gedonia)") : ""), GUILayout.Width(250f));
+                GameSkin.LLabel(f.Name + (f.InGedonia ? Lang.T("   (playing Gedonia)", "   (spielt Gedonia)") : ""), GUILayout.Width(250f));
                 bool invited = t.Invited.Contains(f.Id);
-                if (GUILayout.Button(invited ? Lang.T("Invite again", "Erneut") : Lang.T("Invite", "Einladen"), GUILayout.Width(90f))) Invite(t, f.Id);
+                if (GameSkin.LButton(invited ? Lang.T("Invite again", "Erneut") : Lang.T("Invite", "Einladen"), GUILayout.Width(90f))) Invite(t, f.Id);
                 GUILayout.EndHorizontal();
             }
-            GUILayout.EndScrollView();
-            if (note.Length > 0) GUILayout.Label(note);
+            GameSkin.EndScroll();
+            if (note.Length > 0) GameSkin.LLabel(note);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button(Lang.T("Steam overlay", "Steam-Overlay"))) t.Api.OpenInviteDialog(t.Lobby);
-            if (GUILayout.Button(Lang.T("Copy lobby id", "Lobby-ID kopieren")))
+            if (GameSkin.LButton(Lang.T("Steam overlay", "Steam-Overlay"))) t.Api.OpenInviteDialog(t.Lobby);
+            if (GameSkin.LButton(Lang.T("Copy lobby id", "Lobby-ID kopieren")))
             {
                 GUIUtility.systemCopyBuffer = t.Lobby.ToString();
                 note = Lang.T("Lobby id copied. A friend can join with -coop-connect steam:", "Lobby-ID kopiert. Ein Freund kann mit -coop-connect steam:") + t.Lobby + Lang.T("", " beitreten.");

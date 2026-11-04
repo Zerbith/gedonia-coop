@@ -92,6 +92,8 @@ namespace GedoniaCoop
             }
             if (loadedFor != SaveKey) { loadedFor = SaveKey; bound = LoadBinding(); }
             PlaceAndBind(player);
+            DeathButtons(connected);
+            PauseButtons(connected);
 
             if (invincibleUntil > 0f && now >= invincibleUntil) { Traverse.Create(player).Field("invincibility").SetValue(false); invincibleUntil = -1f; }
             if (!connected) { reviveAt = -1f; Banner = ""; return; }
@@ -103,8 +105,137 @@ namespace GedoniaCoop
             if (reviveAt >= 0f)
             {
                 if (!player.isDead) { reviveAt = -1f; Banner = ""; return; } // revived by other means
-                { string at = TargetName(player); string de = Lang.German ? Translator.German(at) : null; Banner = Lang.T("You have fallen.  Respawning in " + Mathf.CeilToInt(reviveAt - now) + " s at " + at, "Du bist gefallen.  Wiederbelebung in " + Mathf.CeilToInt(reviveAt - now) + " s bei " + (de ?? at)); }
+                { string at = TargetName(player); string de = Lang.German ? Translator.German(at) : null; Banner = Lang.T("You have fallen.  Respawning in " + Mathf.CeilToInt(reviveAt - now) + " s at " + at, "Du bist gefallen.  Wiederbelebung in " + Mathf.CeilToInt(reviveAt - now) + " s bei " + (de ?? at));
+                  Countdown = Lang.T("Respawning in " + Mathf.CeilToInt(reviveAt - now) + " s\nat " + at, "Wiederbelebung in " + Mathf.CeilToInt(reviveAt - now) + " s\nbei " + (de ?? at)); }
+                ShowCountdown();
                 if (now >= reviveAt) Revive(player, now);
+            }
+        }
+
+        // The death screen (InterfaceManager.panels[8], "DeathMessage") offers "Load
+        // game" and "Return to menu". Loading would turn back this player's world
+        // (for the host: everyone's), and the player stands up again by itself. So
+        // while other players are connected both buttons are hidden and the panel
+        // shows only the respawn countdown, in a copy of its own title label (the
+        // game's font, colour and outline). Alone the panel is the game's again.
+        public static bool HideButtons;
+        public static string Countdown = "";
+        public static bool CountdownShown; // in the panel: no extra banner
+        GameObject deathLoad, deathMenu;
+        UILabel deathTitle, countdownLabel;
+
+        bool FindDeathPanel()
+        {
+            if (deathLoad != null) return true;
+            InterfaceManager im = InterfaceManager.instance;
+            if (im == null || im.panels == null || im.panels.Length <= 8 || im.panels[8] == null) return false;
+            foreach (UIButton b in im.panels[8].GetComponentsInChildren<UIButton>(true))
+                foreach (EventDelegate d in b.onClick)
+                {
+                    if (d == null) continue;
+                    if (d.methodName == "OnLoad") deathLoad = b.gameObject;
+                    else if (d.methodName == "OnReturnToMainMenu") deathMenu = b.gameObject;
+                }
+            if (deathLoad == null) return false;
+            foreach (UILabel l in im.panels[8].GetComponentsInChildren<UILabel>(true))
+                if (l.GetComponentInParent<UIButton>() == null) { deathTitle = l; break; }
+            Plugin.Log.LogInfo("Death screen: buttons " + (deathLoad != null) + "/" + (deathMenu != null) + ", title " + (deathTitle != null ? "'" + deathTitle.text + "'" : "none"));
+            return true;
+        }
+
+        void DeathButtons(bool connected)
+        {
+            HideButtons = connected;
+            if (!connected) CountdownShown = false;
+            if (!FindDeathPanel()) return;
+            if (!connected && countdownLabel != null && countdownLabel.gameObject.activeSelf) countdownLabel.gameObject.SetActive(false);
+            if (deathLoad.activeSelf != connected) return; // already as it should be
+            deathLoad.SetActive(!connected);
+            if (deathMenu != null) deathMenu.SetActive(!connected);
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Death screen: buttons " + (connected ? "hidden (players connected)" : "shown again (alone)"));
+        }
+
+        // The countdown where the buttons were (at the lower one: the panel's middle).
+        void ShowCountdown()
+        {
+            if (!HideButtons || !FindDeathPanel()) return;
+            if (countdownLabel == null && deathTitle != null)
+            {
+                GameObject g = UnityEngine.Object.Instantiate(deathTitle.gameObject, deathTitle.transform.parent);
+                g.name = "CoopRespawnCountdown";
+                foreach (UILocalize loc in g.GetComponentsInChildren<UILocalize>(true)) UnityEngine.Object.Destroy(loc);
+                countdownLabel = g.GetComponent<UILabel>();
+                Vector3 a = deathLoad.transform.position, b = deathMenu != null ? deathMenu.transform.position : a;
+                g.transform.position = b; // about the middle of the panel
+                g.transform.localScale = deathTitle.transform.localScale;
+                countdownLabel.overflowMethod = UILabel.Overflow.ResizeFreely;
+                countdownLabel.alignment = NGUIText.Alignment.Center;
+                countdownLabel.pivot = UIWidget.Pivot.Center;
+                Plugin.Log.LogInfo("Death screen: countdown label added at " + g.transform.localPosition);
+            }
+            if (countdownLabel == null) return;
+            if (!countdownLabel.gameObject.activeSelf) countdownLabel.gameObject.SetActive(true);
+            if (countdownLabel.text != Countdown) countdownLabel.text = Countdown;
+            CountdownShown = true;
+        }
+
+        // The pause menu's "Load game" (same OnLoad) is hidden too while players are
+        // connected; the buttons below it move up into the gap ("Save game" stays).
+        // Set every frame by the plugin (also outside the world).
+        public static bool Connected;
+        GameObject pauseLoad;
+        readonly List<Transform> pauseBelow = new List<Transform>();
+        float pauseStep;
+
+        void PauseButtons(bool connected)
+        {
+            InterfaceManager im = InterfaceManager.instance;
+            if (im == null || im.pauseMenuSP == null) return;
+            if (pauseLoad == null)
+            {
+                foreach (UIButton b in im.pauseMenuSP.GetComponentsInChildren<UIButton>(true))
+                    foreach (EventDelegate d in b.onClick)
+                        if (d != null && d.methodName == "OnLoad") pauseLoad = b.gameObject;
+                if (pauseLoad == null) return;
+                Transform parent = pauseLoad.transform.parent;
+                float y = pauseLoad.transform.localPosition.y, next = float.MinValue;
+                foreach (UIButton b in parent.GetComponentsInChildren<UIButton>(true))
+                {
+                    if (b.transform.parent != parent || b.gameObject == pauseLoad) continue;
+                    float by = b.transform.localPosition.y;
+                    if (by < y - 1f) { pauseBelow.Add(b.transform); if (by > next) next = by; }
+                }
+                pauseStep = next > float.MinValue ? y - next : 0f;
+                Plugin.Log.LogInfo("Pause menu: load button found, " + pauseBelow.Count + " buttons below, step " + pauseStep);
+            }
+            if (pauseLoad.activeSelf != connected) return; // already as it should be
+            pauseLoad.SetActive(!connected);
+            foreach (Transform t in pauseBelow) t.localPosition += new Vector3(0f, connected ? pauseStep : -pauseStep, 0f);
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Pause menu: load button " + (connected ? "hidden (players connected)" : "shown again (alone)"));
+        }
+
+        // Keyboard or gamepad could still reach a hidden button: in the world, with
+        // players connected, loading does nothing, and the death screen's "return to
+        // menu" neither. The main menu's loading is not affected.
+        [HarmonyPatch(typeof(InterfaceManager), "OnLoad")]
+        static class DeathLoadPatch
+        {
+            static bool Prefix(InterfaceManager __instance)
+            {
+                if (!Connected || PlayerScript.instance == null) return true;
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Load blocked in co-op");
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(InterfaceManager), "OnReturnToMainMenu")]
+        static class DeathMenuPatch
+        {
+            static bool Prefix(InterfaceManager __instance)
+            {
+                if (!Connected || __instance.panels == null || __instance.panels.Length <= 8 || __instance.panels[8] == null || !__instance.panels[8].activeSelf) return true;
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Death screen: return to menu blocked in co-op");
+                return false;
             }
         }
 

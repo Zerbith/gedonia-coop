@@ -715,20 +715,19 @@ namespace GedoniaCoop
             float w = cur != null && cur.Open ? 720f : 420f, h = cur != null && cur.Open ? 470f : 160f + 30f * (asks.Count + 4);
             Rect area = new Rect(sw - w - 30f, 160f, w, h);
             PanelRect = area;
-            GUI.Box(area, "", panel);
-            GUI.Box(area, Lang.T("Trade", "Handel"));
+            GameSkin.Window(area, Lang.T("Trade", "Handel"), panel);
             GUILayout.BeginArea(new Rect(area.x + 10f, area.y + 28f, area.width - 20f, area.height - 34f));
             if (cur == null)
             {
                 foreach (KeyValuePair<int, KeyValuePair<int, float>> a in new List<KeyValuePair<int, KeyValuePair<int, float>>>(asks))
                 {
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label(Lang.T(NameOf(a.Value.Key) + " wants to trade", NameOf(a.Value.Key) + " möchte handeln"), GUILayout.Width(200f));
-                    if (GUILayout.Button(Lang.T("Accept", "Annehmen"), GUILayout.Width(90f))) Reply(a.Key, true);
-                    if (GUILayout.Button(Lang.T("Decline", "Ablehnen"), GUILayout.Width(90f))) Reply(a.Key, false);
+                    GameSkin.LLabel(Lang.T(NameOf(a.Value.Key) + " wants to trade", NameOf(a.Value.Key) + " möchte handeln"), GUILayout.Width(200f));
+                    if (GameSkin.LButton(Lang.T("Accept", "Annehmen"), GUILayout.Width(90f))) Reply(a.Key, true);
+                    if (GameSkin.LButton(Lang.T("Decline", "Ablehnen"), GUILayout.Width(90f))) Reply(a.Key, false);
                     GUILayout.EndHorizontal();
                 }
-                GUILayout.Label(Lang.T("Trade with (within " + Reach + " m):", "Handeln mit (bis " + Reach + " m):"));
+                GameSkin.LLabel(Lang.T("Trade with (within " + Reach + " m):", "Handeln mit (bis " + Reach + " m):"));
                 int shown = 0;
                 foreach (int other in peers())
                 {
@@ -736,20 +735,20 @@ namespace GedoniaCoop
                     if (!Near(other, out at)) continue;
                     shown++;
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label(NameOf(other), GUILayout.Width(250f));
-                    if (GUILayout.Button(Lang.T("Trade", "Handeln"), GUILayout.Width(130f))) Ask(other);
+                    GameSkin.LLabel(NameOf(other), GUILayout.Width(250f));
+                    if (GameSkin.LButton(Lang.T("Trade", "Handeln"), GUILayout.Width(130f))) Ask(other);
                     GUILayout.EndHorizontal();
                 }
-                if (shown == 0) GUILayout.Label(Lang.T("Nobody close enough.", "Niemand nah genug."));
+                if (shown == 0) GameSkin.LLabel(Lang.T("Nobody close enough.", "Niemand nah genug."));
             }
             else if (!cur.Open)
             {
-                GUILayout.Label(Lang.T("Waiting for " + NameOf(cur.Partner) + " ...", "Warte auf " + NameOf(cur.Partner) + " ..."));
-                if (GUILayout.Button(Lang.T("Cancel", "Abbrechen"))) Cancel("asker cancelled");
+                GameSkin.LLabel(Lang.T("Waiting for " + NameOf(cur.Partner) + " ...", "Warte auf " + NameOf(cur.Partner) + " ..."));
+                if (GameSkin.LButton(Lang.T("Cancel", "Abbrechen"))) Cancel("asker cancelled");
             }
             else DrawTrade(p);
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button(Lang.T("Close", "Schließen"))) Open = false;
+            if (GameSkin.LButton(Lang.T("Close", "Schließen"))) Open = false;
             GUILayout.EndArea();
         }
 
@@ -758,64 +757,64 @@ namespace GedoniaCoop
             bool frozen = cur.Committing;
             GUILayout.BeginHorizontal();
             // Inventory
-            GUILayout.BeginVertical(GUILayout.Width(240f));
-            GUILayout.Label("<b>" + Lang.T("Your inventory", "Dein Inventar") + "</b>");
-            invScroll = GUILayout.BeginScrollView(invScroll, GUILayout.Height(300f));
+            GUILayout.BeginVertical(GUILayout.Width(250f));
+            GameSkin.LLabel("<b>" + Lang.T("Your inventory", "Dein Inventar") + "</b>");
+            invScroll = GameSkin.BeginScroll(invScroll, GUILayout.Height(300f));
             if (p != null)
                 foreach (InventoryItem ii in new List<InventoryItem>(p.inventory))
                 {
                     if (ii == null || !Tradable(ii.item)) continue;
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label(Show(ii.item.name) + (ii.amount > 1 ? " x" + ii.amount : ""), GUILayout.Width(140f));
+                    GameSkin.LLabel(Show(ii.item.name) + (ii.amount > 1 ? " x" + ii.amount : ""), GUILayout.Width(128f));
                     GUI.enabled = !frozen;
-                    if (GUILayout.Button("+1", GUILayout.Width(30f))) AddItem(ii, 1);
-                    if (ii.amount > 1 && GUILayout.Button(Lang.T("all", "alle"), GUILayout.Width(36f))) AddItem(ii, ii.amount);
+                    if (GameSkin.LButton("+1", GUILayout.Width(40f))) AddItem(ii, 1);
+                    if (ii.amount > 1 && GameSkin.LButton(Lang.T("all", "alle"), GUILayout.Width(52f))) AddItem(ii, ii.amount);
                     GUI.enabled = true;
                     GUILayout.EndHorizontal();
                 }
-            GUILayout.EndScrollView();
+            GameSkin.EndScroll();
             GUILayout.EndVertical();
             // Our offer
             GUILayout.BeginVertical(GUILayout.Width(210f));
-            GUILayout.Label("<b>" + Lang.T("You give", "Du gibst") + "</b>");
+            GameSkin.LLabel("<b>" + Lang.T("You give", "Du gibst") + "</b>");
             for (int i = 0; i < cur.Ours.Lines.Count; i++)
             {
                 Line l = cur.Ours.Lines[i];
                 GUILayout.BeginHorizontal();
-                GUILayout.Label(l.Amount + "x " + Show(l.Name), GUILayout.Width(160f));
+                GameSkin.LLabel(l.Amount + "x " + Show(l.Name), GUILayout.Width(160f));
                 GUI.enabled = !frozen;
-                if (GUILayout.Button("-", GUILayout.Width(26f))) { RemoveLine(i); GUI.enabled = true; GUILayout.EndHorizontal(); break; }
+                if (GameSkin.LButton("-", GUILayout.Width(36f))) { RemoveLine(i); GUI.enabled = true; GUILayout.EndHorizontal(); break; }
                 GUI.enabled = true;
                 GUILayout.EndHorizontal();
             }
             GUILayout.BeginHorizontal();
-            GUILayout.Label(Lang.T("Gold:", "Gold:"), GUILayout.Width(45f));
+            GameSkin.LLabel(Lang.T("Gold:", "Gold:"), GUILayout.Width(45f));
             GUI.enabled = !frozen;
-            goldText = GUILayout.TextField(goldText, 9, GUILayout.Width(80f));
+            goldText = GameSkin.LTextField(goldText, 9, GUILayout.Width(80f));
             int g;
-            if (GUILayout.Button("OK", GUILayout.Width(40f)) && int.TryParse(goldText, out g)) SetGold(g);
+            if (GameSkin.LButton("OK", GUILayout.Width(50f)) && int.TryParse(goldText, out g)) SetGold(g);
             GUI.enabled = true;
             GUILayout.EndHorizontal();
-            GUILayout.Label(Lang.T("Offered: ", "Angeboten: ") + cur.Ours.Gold + Lang.T(" gold (you have ", " Gold (du hast ") + (p != null ? p.gold : 0) + ")");
+            GameSkin.LLabel(Lang.T("Offered: ", "Angeboten: ") + cur.Ours.Gold + Lang.T(" gold (you have ", " Gold (du hast ") + (p != null ? p.gold : 0) + ")");
             GUILayout.EndVertical();
             // Their offer
             GUILayout.BeginVertical(GUILayout.Width(210f));
-            GUILayout.Label("<b>" + Lang.T(NameOf(cur.Partner) + " gives", NameOf(cur.Partner) + " gibt") + "</b>");
-            foreach (Line l in cur.Theirs.Lines) GUILayout.Label(l.Amount + "x " + Show(l.Name));
-            if (cur.Theirs.Gold > 0) GUILayout.Label(cur.Theirs.Gold + Lang.T(" gold", " Gold"));
-            if (cur.Theirs.Lines.Count == 0 && cur.Theirs.Gold == 0) GUILayout.Label(Lang.T("(nothing yet)", "(noch nichts)"));
+            GameSkin.LLabel("<b>" + Lang.T(NameOf(cur.Partner) + " gives", NameOf(cur.Partner) + " gibt") + "</b>");
+            foreach (Line l in cur.Theirs.Lines) GameSkin.LLabel(l.Amount + "x " + Show(l.Name));
+            if (cur.Theirs.Gold > 0) GameSkin.LLabel(cur.Theirs.Gold + Lang.T(" gold", " Gold"));
+            if (cur.Theirs.Lines.Count == 0 && cur.Theirs.Gold == 0) GameSkin.LLabel(Lang.T("(nothing yet)", "(noch nichts)"));
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
 
             bool weOk = cur.OurConfirm == cur.Ours.Version && cur.OurConfirmSeen == cur.Theirs.Version;
             bool theyOk = cur.TheirConfirm == cur.Theirs.Version && cur.TheirConfirmSeen == cur.Ours.Version;
-            GUILayout.Label(frozen ? Lang.T("Exchanging ...", "Wird getauscht ...")
+            GameSkin.LLabel(frozen ? Lang.T("Exchanging ...", "Wird getauscht ...")
                 : (weOk ? Lang.T("You confirmed. ", "Du hast bestätigt. ") : "") + (theyOk ? Lang.T(NameOf(cur.Partner) + " confirmed.", NameOf(cur.Partner) + " hat bestätigt.") : Lang.T(NameOf(cur.Partner) + " has not confirmed.", NameOf(cur.Partner) + " hat noch nicht bestätigt.")));
             GUILayout.BeginHorizontal();
             GUI.enabled = !frozen && !weOk;
-            if (GUILayout.Button(Lang.T("Confirm", "Bestätigen"), GUILayout.Height(30f))) Confirm();
+            if (GameSkin.LButton(Lang.T("Confirm", "Bestätigen"), GUILayout.Height(30f))) Confirm();
             GUI.enabled = !frozen;
-            if (GUILayout.Button(Lang.T("Cancel trade", "Handel abbrechen"), GUILayout.Height(30f))) Cancel("cancel button");
+            if (GameSkin.LButton(Lang.T("Cancel trade", "Handel abbrechen"), GUILayout.Height(30f))) Cancel("cancel button");
             GUI.enabled = true;
             GUILayout.EndHorizontal();
         }

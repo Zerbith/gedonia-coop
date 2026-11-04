@@ -58,7 +58,7 @@ namespace GedoniaCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "gedonia.coop";
-        public const string Version = "0.9.4";
+        public const string Version = "0.9.5";
         const float SendInterval = 0.05f;
         const float AppearanceInterval = 1f;
         const float PeerTimeout = 5f;
@@ -600,6 +600,41 @@ namespace GedoniaCoop
             Log.LogInfo(Stamp() + " Screenshot: " + file);
         }
 
+        // Test-only (step atlasdump): every loaded NGUI atlas -> BepInEx/coop-atlas/<name>.png
+        // plus <name>.tsv (sprite, x, y, w, h), to pick icons from the game's own UI art.
+        void AtlasDump()
+        {
+            string dir = Path.Combine(Paths.BepInExRootPath, "coop-atlas");
+            Directory.CreateDirectory(dir);
+            HashSet<string> done = new HashSet<string>();
+            List<INGUIAtlas> atlases = new List<INGUIAtlas>();
+            foreach (UIAtlas a in Resources.FindObjectsOfTypeAll<UIAtlas>()) atlases.Add(a);
+            foreach (NGUIAtlas a in Resources.FindObjectsOfTypeAll<NGUIAtlas>()) atlases.Add(a);
+            foreach (UISprite s in Resources.FindObjectsOfTypeAll<UISprite>()) if (s.atlas != null) atlases.Add(s.atlas);
+            foreach (INGUIAtlas a in atlases)
+            {
+                if (a.spriteList == null) continue;
+                Texture tex = a.texture;
+                string name = ((UnityEngine.Object)a).name;
+                if (tex == null || !done.Add(name)) continue;
+                System.Text.StringBuilder sb = new System.Text.StringBuilder("sprite\tx\ty\tw\th\n");
+                foreach (UISpriteData d in a.spriteList) sb.Append(d.name + "\t" + d.x + "\t" + d.y + "\t" + d.width + "\t" + d.height + "\n");
+                File.WriteAllText(Path.Combine(dir, name + ".tsv"), sb.ToString());
+                RenderTexture rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
+                RenderTexture prev = RenderTexture.active;
+                Graphics.Blit(tex, rt);
+                RenderTexture.active = rt;
+                Texture2D copy = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
+                copy.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
+                copy.Apply();
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+                File.WriteAllBytes(Path.Combine(dir, name + ".png"), copy.EncodeToPNG());
+                UnityEngine.Object.Destroy(copy);
+                Log.LogInfo("[atlasdump] " + name + " " + tex.width + "x" + tex.height + " sprites=" + a.spriteList.Count);
+            }
+        }
+
         // Test-only (-coop-steam-selftest 1): once the lobby exists, read it back
         // from Steam, open the invite dialog as F8 does, then quit normally so
         // the lobby is left and rich presence cleared.
@@ -1108,6 +1143,8 @@ namespace GedoniaCoop
         {
             float now = Time.realtimeSinceStartup;
             TryAutoload(now);
+            GameSkin.Load();
+            RespawnStones.Connected = net != null && puppets.Count > 0;
             CheckHotkeys();
             TakeSteamName();
             KeepRunning();
@@ -1601,6 +1638,8 @@ namespace GedoniaCoop
                     else if (step.StartsWith("voteopt:")) DialogueSync.TestVoteAnswer(int.Parse(step.Substring(8)));
                     else if (step == "dialogstate") Log.LogInfo(Stamp() + " [dialog] " + (dialogue != null ? dialogue.Describe() : "-"));
                     else if (step == "leavedialog") InterfaceManager.instance.ExitDialogue();
+                    else if (step == "loadtry") { Log.LogInfo(Stamp() + " Test: calling InterfaceManager.OnLoad"); InterfaceManager.instance.OnLoad(); Log.LogInfo("Test: load panel open=" + InterfaceManager.instance.panels[13].activeSelf); InterfaceManager.instance.panels[13].SetActive(false); }
+                    else if (step == "coopleave") { Log.LogInfo(Stamp() + " Test: leaving co-op"); CoopLeave(); }
                     else if (step.StartsWith("journalpick:")) { InterfaceManager.instance.pickedEntry = int.Parse(step.Substring(12)); InterfaceManager.instance.RefreshJournal(); }
                     else if (step.StartsWith("gold:")) { Log.LogInfo(Stamp() + " Test: gold " + player.gold + " -> " + step.Substring(5)); player.gold = int.Parse(step.Substring(5)); }
                     else if (step == "effectsdump")
@@ -1835,6 +1874,9 @@ namespace GedoniaCoop
                         if (mi == null) Log.LogWarning("No InterfaceManager." + m);
                         else { mi.Invoke(InterfaceManager.instance, null); Log.LogInfo("Test: window " + m); }
                     }
+                    else if (step == "atlasdump") AtlasDump();
+                    else if (step == "barmeasure") BarMeasure();
+                    else if (step.StartsWith("uistyle")) UiStyle(step.Length > 8 ? step.Substring(8) : "");
                     else if (step == "uidump") { DumpButtons("uibutton"); Shot(local.Name + "_ui"); }
                     else if (step == "textcount")
                     {
@@ -2275,6 +2317,54 @@ namespace GedoniaCoop
         }
 
         // Test survey: every visible NGUI button with what it calls, its text, sprite and place.
+        // Test-only (step barmeasure): screen x range of every visible UI widget in the
+        // top 160 px, to check that the upper bar stays centred.
+        // Test-only (step uistyle[:<path part>]): sprites and fonts of the visible game UI,
+        // one line per distinct sprite/label look, to copy the game's style.
+        void UiStyle(string filter)
+        {
+            HashSet<string> seen = new HashSet<string>();
+            foreach (UIWidget w in Resources.FindObjectsOfTypeAll<UIWidget>())
+            {
+                if (!w.gameObject.scene.IsValid() || !w.gameObject.activeInHierarchy || !w.enabled || w.finalAlpha <= 0.01f) continue;
+                string path = w.name; for (Transform t = w.transform.parent; t != null; t = t.parent) path = t.name + "/" + path;
+                if (filter.Length > 0 && path.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                UISprite s = w as UISprite; UILabel l = w as UILabel;
+                string key, line;
+                if (s != null)
+                {
+                    UISpriteData d = s.atlas != null ? s.atlas.GetSprite(s.spriteName) : null;
+                    key = "S" + s.spriteName + s.type + s.color;
+                    line = "sprite=" + s.spriteName + " type=" + s.type + " size=" + s.width + "x" + s.height + " color=" + s.color + (d != null ? " rect=" + d.x + "," + d.y + "," + d.width + "x" + d.height + " border=" + d.borderLeft + "," + d.borderRight + "," + d.borderTop + "," + d.borderBottom : "");
+                }
+                else if (l != null)
+                {
+                    key = "L" + (l.trueTypeFont != null ? l.trueTypeFont.name : "-") + l.fontSize + l.color + l.effectStyle;
+                    line = "label font=" + (l.trueTypeFont != null ? l.trueTypeFont.name : (l.bitmapFont != null ? "bitmap" : "-")) + " size=" + l.fontSize + " style=" + l.fontStyle + " color=" + l.color + " effect=" + l.effectStyle + " effectColor=" + l.effectColor + " text=" + (l.text.Length > 30 ? l.text.Substring(0, 30) : l.text).Replace("\n", " ");
+                }
+                else { key = "W" + w.GetType().Name + path; line = w.GetType().Name + " size=" + w.width + "x" + w.height; }
+                if (!seen.Add(key)) continue;
+                Log.LogInfo("[uistyle] " + path + " " + line);
+            }
+        }
+
+        void BarMeasure()
+        {
+            Log.LogInfo("[barmeasure] screen " + Screen.width + "x" + Screen.height);
+            foreach (UIWidget w in Resources.FindObjectsOfTypeAll<UIWidget>())
+            {
+                if (!w.gameObject.scene.IsValid() || !w.gameObject.activeInHierarchy || !w.enabled || w.alpha <= 0.01f) continue;
+                Camera cam = NGUITools.FindCameraForLayer(w.gameObject.layer);
+                if (cam == null) continue;
+                Vector3[] c = w.worldCorners;
+                Vector3 a = cam.WorldToScreenPoint(c[0]), b = cam.WorldToScreenPoint(c[2]);
+                if (Screen.height - b.y > 160f) continue;
+                UISprite s = w as UISprite; UILabel l = w as UILabel;
+                string path = w.name; for (Transform t = w.transform.parent; t != null && t.name != "MainInterface"; t = t.parent) path = t.name + "/" + path;
+                Log.LogInfo("[barmeasure] " + path + " x " + a.x.ToString("F1") + ".." + b.x.ToString("F1") + " mid " + ((a.x + b.x) / 2f).ToString("F1") + " ytop " + (Screen.height - b.y).ToString("F0") + (s != null ? " sprite=" + s.spriteName : "") + (l != null ? " text=" + l.text : ""));
+            }
+        }
+
         void DumpButtons(string tag)
         {
             foreach (UIButton b in Resources.FindObjectsOfTypeAll<UIButton>())

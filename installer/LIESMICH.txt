@@ -171,6 +171,9 @@ richten und F druecken (wie beim Sprechen): dann ist man an ihn gebunden. Stirbt
 Co-op, steht man nach 10 Sekunden am zuletzt gebundenen Kristall wieder auf (ohne Kristall: dort, wo man in die Welt gekommen ist).
 Kristalle gibt es in Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, im
 Forscherlager sowie in Erynard, beim Eisenklan und bei den Soehnen des Donners.
+Solange andere Spieler verbunden sind, zeigt der Todesbildschirm nur den Countdown bis zur
+Wiederbelebung (kein "Spiel laden", kein "Zurueck zum Menue"), und im Pausemenue fehlt "Spiel
+laden": Laden wuerde die Welt zuruecksetzen (beim Host fuer alle). Speichern geht weiterhin.
 
 
 WICHTIG ZU DEN SPIELSTAENDEN

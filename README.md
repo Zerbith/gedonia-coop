@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.9.4). Tested with Steam build 16727998.
+Status: **playable alpha** (0.9.5). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -43,16 +43,17 @@ No game files are included; you need your own copy of the game.
 - **World:** chests, ore and herbs (taken once for all), world events, expeditions including their
   generated dungeons, travelling merchants and bards, time of day and weather, companions and summons,
   the Northern Kingdoms.
-- **Dying:** respawn crystals in the villages instead of the reload-only death screen.
+- **Dying:** respawn crystals in the villages instead of the reload-only death screen. While other players are connected the death screen shows only the respawn countdown, and "Load game" is gone from the pause menu (loading would turn back the world, for the host everyone's).
 - Pause menu does not stop the game in co-op.
 - **View distance:** an extra slider (Esc > Options > Graphics, 100-250 %) for scenery only; enemies and NPCs load as before.
+- **Look:** the co-op menu, group, trade and chat windows and the group member frames use the game's own window art and font (taken from the game at runtime; no game files in this repository).
 
 ## Install (players)
 
 Download the ZIP from the releases page, unpack it, close Gedonia and run `Install.cmd`.
 The installer finds Gedonia through Steam, backs up your saves, downloads BepInEx 5.4.23.5 from its
 GitHub release (SHA-256 checked) and copies the plugin. `Uninstall.cmd` removes exactly what it added.
-Details: [installer/README.txt](installer/README.txt) (English), [installer/LIESMICH.txt](installer/LIESMICH.txt) (German).
+Details: [installer/README.txt](installer/README.txt) (English), [installer/LIESMICH.txt](installer/LIESMICH.txt) (the same in German).
 
 Everyone needs the same mod version. Main menu: "Host co-op" / "Join co-op"; in game: the co-op
 button in the top bar or F8.
@@ -91,14 +92,6 @@ votes) and takes screenshots. `scripts\check-ownership.ps1` checks that no enemy
 The second copy is made of hard links (`scripts\make-client-copy.ps1`); `scripts\set-product-name.ps1`
 gives each copy its own Unity product name so test runs never touch the real saves or settings.
 You need your own test save named `coop-test.es3` in `backups\`.
-
-## German translation
-
-The plugin can show the whole game in German. The translation tables pair the game's own English
-texts with the German ones, so they are not part of this repository or its releases. Without them the
-plugin stays English and shows no "Deutsch" button. The plugin can also play a German voice-over
-(dialogues, quest texts, cutscenes) from generated audio files; those are derived from the game's texts
-too and are not included either.
 
 ## Known issues
 

@@ -247,6 +247,7 @@ namespace GedoniaCoop
                 lineStyle.margin = new RectOffset(0, 0, 1, 1);
                 lineStyle.padding = new RectOffset(2, 2, 1, 1);
             }
+            GameSkin.Fontify(lineStyle);
             if (inputOpen) DrawInput(sw, sh, panel);
             else DrawRecent(sw, sh, panel);
         }
@@ -269,11 +270,11 @@ namespace GedoniaCoop
             Color old = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01((RecentSeconds - (now - newest)) / FadeSeconds));
             float y = sh - total - 16f;
-            GUI.Box(new Rect(8f, y - 4f, w, total + 8f), "", panel);
+            if (!GameSkin.Ready) GUI.Box(new Rect(8f, y - 4f, w, total + 8f), "", panel); // the game's own floating texts have no box, only the outline
             foreach (Line l in show)
             {
                 float h = lineStyle.CalcHeight(new GUIContent(l.Text), w - 12f);
-                GUI.Label(new Rect(14f, y, w - 12f, h), l.Text, lineStyle);
+                GameSkin.Label(new Rect(14f, y, w - 12f, h), l.Text, lineStyle);
                 y += h + 2f;
             }
             GUI.color = old;
@@ -298,19 +299,18 @@ namespace GedoniaCoop
             float w = Mathf.Clamp(sw * 0.28f, 300f, 520f), h = Mathf.Clamp(sh * 0.42f, 200f, 380f);
             Rect area = new Rect(8f, sh - h - 8f, w, h);
             PanelRect = area;
-            GUI.Box(area, "", panel);
-            GUI.Box(area, Lang.T("Chat", "Chat"));
+            GameSkin.Window(area, Lang.T("Chat", "Chat"), panel);
             GUILayout.BeginArea(new Rect(area.x + 8f, area.y + 24f, w - 16f, h - 24f - 56f));
-            scroll = GUILayout.BeginScrollView(scroll, false, false, GUIStyle.none, GUI.skin.verticalScrollbar);
-            if (history.Count == 0) GUILayout.Label(Lang.T("No messages yet.", "Noch keine Nachrichten."), lineStyle);
-            foreach (Line l in history) GUILayout.Label(l.Text, lineStyle);
-            GUILayout.EndScrollView();
+            scroll = GameSkin.BeginScroll(scroll);
+            if (history.Count == 0) GameSkin.LLabel(Lang.T("No messages yet.", "Noch keine Nachrichten."), lineStyle);
+            foreach (Line l in history) GameSkin.LLabel(l.Text, lineStyle);
+            GameSkin.EndScroll();
             GUILayout.EndArea();
             GUI.SetNextControlName(FieldName);
-            text = GUI.TextField(new Rect(area.x + 8f, area.yMax - 52f, w - 16f - 78f, 24f), text, MaxLength);
+            text = GameSkin.TextField(new Rect(area.x + 8f, area.yMax - 54f, w - 16f - 82f, 28f), text, MaxLength);
             if (GUI.GetNameOfFocusedControl() != FieldName) GUI.FocusControl(FieldName);
-            if (GUI.Button(new Rect(area.xMax - 8f - 72f, area.yMax - 52f, 72f, 24f), Lang.T("Send", "Senden"))) send = true;
-            GUI.Label(new Rect(area.x + 8f, area.yMax - 26f, w - 16f, 22f), Lang.T("Enter sends, Esc closes", "Enter sendet, Esc schließt") + "   " + text.Length + "/" + MaxLength, lineStyle);
+            if (GameSkin.Button(new Rect(area.xMax - 8f - 76f, area.yMax - 53f, 76f, 26f), Lang.T("Send", "Senden"))) send = true;
+            GameSkin.Label(new Rect(area.x + 8f, area.yMax - 26f, w - 16f, 22f), Lang.T("Enter sends, Esc closes", "Enter sendet, Esc schließt") + "   " + text.Length + "/" + MaxLength, lineStyle);
             if (send) Submit();
             else if (close) Close();
         }

@@ -144,6 +144,9 @@ the last crystal you bound to after 10 seconds (without a crystal:
 where you entered the world).
 Crystals: Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, the explorers' camp,
 Erynard, the Ironclad clan and the Sons of Thunder.
+While other players are connected, the death screen shows only the countdown (no "Load game",
+no "Return to menu") and the pause menu has no "Load game": loading would turn back the world
+(for the host: everyone's). Saving still works.
 
 
 ABOUT YOUR SAVES - IMPORTANT

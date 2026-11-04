@@ -154,12 +154,33 @@ namespace GedoniaCoop
             if (journal == null || settings == null) { sceneSince = Time.realtimeSinceStartup; return; }
             Vector3 step = settings.transform.localPosition - journal.transform.localPosition;
             topButton = Clone(settings, "Coop", step, "F8", "F8", "OnTopCoopButton");
-            // The character icon, tinted, for "other players".
+            // "Other players": the game's own helmet icon twice, a second, slightly
+            // smaller and darker one behind it to the upper left (the atlas has no
+            // group icon). Untinted, so it keeps the gold of the other bar icons.
             UIButton b = topButton.GetComponent<UIButton>();
             b.normalSprite = "UpperPanelCharIcon";
-            b.defaultColor = new Color(0.6f, 0.85f, 1f);
-            UISprite sp = topButton.GetComponent<UISprite>();
-            if (sp != null) { sp.spriteName = "UpperPanelCharIcon"; sp.color = b.defaultColor; }
+            UISprite sp = b.tweenTarget != null ? b.tweenTarget.GetComponent<UISprite>() : null;
+            if (sp == null) sp = topButton.GetComponentInChildren<UISprite>(true);
+            if (sp != null)
+            {
+                sp.spriteName = "UpperPanelCharIcon";
+                sp.MakePixelPerfect();
+                GameObject back = new GameObject("CoopIconBack");
+                back.layer = sp.gameObject.layer;
+                back.transform.parent = sp.transform;
+                back.transform.localScale = Vector3.one;
+                back.transform.localRotation = Quaternion.identity;
+                back.transform.localPosition = new Vector3(-sp.width * 0.58f, sp.height * 0.14f, 0f);
+                UISprite bs = back.AddComponent<UISprite>();
+                bs.atlas = sp.atlas;
+                bs.spriteName = "UpperPanelCharIcon";
+                bs.width = Mathf.RoundToInt(sp.width * 0.82f);
+                bs.height = Mathf.RoundToInt(sp.height * 0.82f);
+                bs.pivot = sp.pivot;
+                bs.depth = sp.depth - 1;
+                bs.color = new Color(0.62f, 0.58f, 0.5f, 1f);
+                Plugin.Log.LogInfo("Upper bar: co-op icon " + sp.width + "x" + sp.height + " depth " + sp.depth + ", back " + bs.width + "x" + bs.height + " depth " + bs.depth);
+            }
             // Make the bar's background (UpperButtons/Sprite, centred) one
             // button wider and keep the row centred on it.
             Transform bar = settings.transform.parent;
@@ -167,8 +188,26 @@ namespace GedoniaCoop
             {
                 if (bg.transform.parent != bar || bg.spriteName != "UpperPanel") continue;
                 bg.width += Mathf.RoundToInt(step.x);
+                Plugin.Log.LogInfo("Upper bar: background depth " + bg.depth + " at " + bg.transform.localPosition + " pivot " + bg.pivot + " width " + bg.width + ", bar at " + bar.localPosition + ", step " + step.x);
+                // Only the icon row: other buttons of the bar (the "+" under its
+                // middle notch) stay centred.
                 foreach (UIButton ub in bar.GetComponentsInChildren<UIButton>(true))
+                {
+                    bool row = ub.transform.parent == bar && Mathf.Abs(ub.transform.localPosition.y - settings.transform.localPosition.y) < 2f;
+                    Plugin.Log.LogInfo("Upper bar: " + ub.name + " at " + ub.transform.localPosition + (row ? " (row, moved)" : " (kept)"));
+                    if (!row) continue;
                     ub.transform.localPosition -= new Vector3(step.x / 2f, 0f, 0f);
+                    // The skill-points "+" hangs under Skills, which sat right under the
+                    // bar's middle notch: keep it there instead of moving it with B.
+                    HashSet<Transform> hang = new HashSet<Transform>();
+                    foreach (UISprite s in ub.GetComponentsInChildren<UISprite>(true))
+                        if (s.spriteName == "WindowFrameSmall" && s.transform != ub.transform) hang.Add(s.transform.parent == ub.transform ? s.transform : s.transform.parent);
+                    foreach (Transform h in hang)
+                    {
+                        h.localPosition += new Vector3(step.x / 2f / Mathf.Max(0.0001f, ub.transform.localScale.x), 0f, 0f);
+                        Plugin.Log.LogInfo("Upper bar: kept " + ub.name + "/" + h.name + " under the notch");
+                    }
+                }
                 break;
             }
             Plugin.Log.LogInfo("Upper bar: co-op button added");
@@ -218,7 +257,7 @@ namespace GedoniaCoop
                 }
             }
             if (Note.Length > 0)
-                GUI.Box(new Rect(sw / 2f - 300f, 90f, 600f, 60f), Note, note);
+                GameSkin.Plate(new Rect(sw / 2f - 300f, 90f, 600f, 60f), Note, note);
             if (JoinOpen) DrawJoin(sw, scale);
             if (MenuOpen) DrawMenu(sw, scale);
             if (HostOpen) DrawHost(sw, scale);
@@ -248,38 +287,37 @@ namespace GedoniaCoop
             float w = 400f, h = 230f + (Mathf.Max(1, hosting.Count) + Mathf.Max(1, lan.Count)) * 30f;
             Rect area = new Rect(sw - w - 30f, 200f, w, h);
             panelOnScreen = new Rect(area.x * scale, area.y * scale, area.width * scale, area.height * scale);
-            GUI.Box(area, "", panel);
-            GUI.Box(area, Lang.T("Join a friend's co-op game", "Co-op-Spiel eines Freundes beitreten"));
+            GameSkin.Window(area, Lang.T("Join a friend's co-op game", "Co-op-Spiel eines Freundes beitreten"), panel);
             GUILayout.BeginArea(new Rect(area.x + 10f, area.y + 28f, area.width - 20f, area.height - 34f));
-            GUILayout.Label("<b>" + Lang.T("Steam friends", "Steam-Freunde") + "</b>");
-            if (hosting.Count == 0) GUILayout.Label(Lang.T("No Steam friend is hosting right now.", "Gerade hostet kein Steam-Freund."));
+            GameSkin.LLabel("<b>" + Lang.T("Steam friends", "Steam-Freunde") + "</b>");
+            if (hosting.Count == 0) GameSkin.LLabel(Lang.T("No Steam friend is hosting right now.", "Gerade hostet kein Steam-Freund."));
             foreach (FriendInfo f in hosting)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label(f.Name, GUILayout.Width(250f));
-                if (GUILayout.Button(Lang.T("Join", "Beitreten"), GUILayout.Width(110f))) { JoinOpen = false; plugin.CoopJoin(f.Lobby, f.Name); }
+                GameSkin.LLabel(f.Name, GUILayout.Width(250f));
+                if (GameSkin.LButton(Lang.T("Join", "Beitreten"), GUILayout.Width(110f))) { JoinOpen = false; plugin.CoopJoin(f.Lobby, f.Name); }
                 GUILayout.EndHorizontal();
             }
             GUILayout.Space(8f);
-            GUILayout.Label("<b>" + Lang.T("Home network (LAN, no Steam servers)", "Heimnetz (LAN, ohne Steam-Server)") + "</b>");
-            if (lan.Count == 0) GUILayout.Label(Lang.T("Searching ... no game found yet.", "Suche ... noch kein Spiel gefunden."));
+            GameSkin.LLabel("<b>" + Lang.T("Home network (LAN, no Steam servers)", "Heimnetz (LAN, ohne Steam-Server)") + "</b>");
+            if (lan.Count == 0) GameSkin.LLabel(Lang.T("Searching ... no game found yet.", "Suche ... noch kein Spiel gefunden."));
             foreach (LanDiscovery.Found g in lan)
             {
                 GUILayout.BeginHorizontal();
                 bool sameVersion = g.Protocol == Net.ProtocolVersion;
-                GUILayout.Label(g.Name + "  (" + g.Address + ")" + (sameVersion ? "" : Lang.T("  other version!", "  andere Version!")), GUILayout.Width(250f));
+                GameSkin.LLabel(g.Name + "  (" + g.Address + ")" + (sameVersion ? "" : Lang.T("  other version!", "  andere Version!")), GUILayout.Width(250f));
                 GUI.enabled = sameVersion;
-                if (GUILayout.Button(Lang.T("Join", "Beitreten"), GUILayout.Width(110f))) { JoinOpen = false; plugin.LanJoin(g.Address); }
+                if (GameSkin.LButton(Lang.T("Join", "Beitreten"), GUILayout.Width(110f))) { JoinOpen = false; plugin.LanJoin(g.Address); }
                 GUI.enabled = true;
                 GUILayout.EndHorizontal();
             }
             GUILayout.BeginHorizontal();
-            GUILayout.Label(Lang.T("Address:", "Adresse:"), GUILayout.Width(70f));
-            lanAddress = GUILayout.TextField(lanAddress, 40, GUILayout.Width(175f));
-            if (GUILayout.Button(Lang.T("Join", "Beitreten"), GUILayout.Width(110f)) && lanAddress.Trim().Length > 0) { JoinOpen = false; plugin.LanJoin(lanAddress); }
+            GameSkin.LLabel(Lang.T("Address:", "Adresse:"), GUILayout.Width(70f));
+            lanAddress = GameSkin.LTextField(lanAddress, 40, GUILayout.Width(175f));
+            if (GameSkin.LButton(Lang.T("Join", "Beitreten"), GUILayout.Width(110f)) && lanAddress.Trim().Length > 0) { JoinOpen = false; plugin.LanJoin(lanAddress); }
             GUILayout.EndHorizontal();
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button(Lang.T("Close", "Schließen"))) JoinOpen = false;
+            if (GameSkin.LButton(Lang.T("Close", "Schließen"))) JoinOpen = false;
             GUILayout.EndArea();
         }
 
@@ -297,54 +335,57 @@ namespace GedoniaCoop
             float w = 400f, h = 200f;
             Rect area = new Rect(sw - w - 30f, 200f, w, h);
             panelOnScreen = new Rect(area.x * scale, area.y * scale, area.width * scale, area.height * scale);
-            GUI.Box(area, "", panel);
-            GUI.Box(area, Lang.T("Host a co-op game", "Co-op-Spiel hosten"));
+            GameSkin.Window(area, Lang.T("Host a co-op game", "Co-op-Spiel hosten"), panel);
             GUILayout.BeginArea(new Rect(area.x + 10f, area.y + 28f, area.width - 20f, area.height - 34f));
-            if (GUILayout.Button(Lang.T("Via Steam (invite friends, also over the internet)", "Über Steam (Freunde einladen, auch übers Internet)"), GUILayout.Height(34f)))
+            if (GameSkin.LButton(Lang.T("Via Steam (invite friends, also over the internet)", "Über Steam (Freunde einladen, auch übers Internet)"), GUILayout.Height(34f)))
             { HostOpen = false; plugin.MenuSteamHost(); }
-            if (GUILayout.Button(Lang.T("In the home network (LAN, no Steam servers)", "Im Heimnetz (LAN, ohne Steam-Server)"), GUILayout.Height(34f)))
+            if (GameSkin.LButton(Lang.T("In the home network (LAN, no Steam servers)", "Im Heimnetz (LAN, ohne Steam-Server)"), GUILayout.Height(34f)))
             { HostOpen = false; plugin.LanHost(); }
-            GUILayout.Label(Lang.T("Then load or start your game as usual.", "Danach wie gewohnt dein Spiel laden oder starten."));
+            GameSkin.LLabel(Lang.T("Then load or start your game as usual.", "Danach wie gewohnt dein Spiel laden oder starten."));
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button(Lang.T("Close", "Schließen"))) HostOpen = false;
+            if (GameSkin.LButton(Lang.T("Close", "Schließen"))) HostOpen = false;
             GUILayout.EndArea();
         }
 
         void DrawMenu(float sw, float scale)
         {
             Vector2 at = TopButtonOnScreen() / scale;
-            float w = 300f, h = 330f;
+            // Height from the content (status lines + one row per button).
+            int buttons = 1;
+            if (plugin.CoopActive) buttons += (plugin.CoopCanInvite ? 1 : 0) + (PartySync.Instance != null ? 1 : 0) + (TradeSync.Instance != null ? 1 : 0) + (ChatSync.Instance != null ? 1 : 0) + 1;
+            else buttons += 3;
+            float w = 300f;
+            float h = 44f + GameSkin.LabelStyle.CalcHeight(new GUIContent(plugin.CoopStatus()), w - 28f) + buttons * 34f + 10f;
             Rect area = new Rect(Mathf.Clamp(at.x - w / 2f, 10f, sw - w - 10f), at.y + 30f, w, h);
             panelOnScreen = new Rect(area.x * scale, area.y * scale, area.width * scale, area.height * scale);
-            GUI.Box(area, "", panel);
-            GUI.Box(area, "Gedonia Co-op " + Plugin.Version);
+            GameSkin.Window(area, "Gedonia Co-op " + Plugin.Version, panel);
             GUILayout.BeginArea(new Rect(area.x + 10f, area.y + 26f, area.width - 20f, area.height - 32f));
-            GUILayout.Label(plugin.CoopStatus());
+            GameSkin.LLabel(plugin.CoopStatus());
             if (plugin.CoopActive)
             {
-                if (plugin.CoopCanInvite && GUILayout.Button(Lang.T("Invite friends", "Freunde einladen"))) { MenuOpen = false; plugin.OpenInvite(); }
+                if (plugin.CoopCanInvite && GameSkin.LButton(Lang.T("Invite friends", "Freunde einladen"))) { MenuOpen = false; plugin.OpenInvite(); }
                 if (PartySync.Instance != null)
                 {
                     int inv = PartySync.Instance.InvitationCount;
                     string label = Lang.T("Group", "Gruppe") + (inv > 0 ? Lang.T(" (" + inv + " invitation)", " (" + inv + " Einladung)") : "");
-                    if (GUILayout.Button(label)) { MenuOpen = false; PartySync.Instance.Open = true; }
+                    if (GameSkin.LButton(label)) { MenuOpen = false; PartySync.Instance.Open = true; }
                 }
                 if (TradeSync.Instance != null)
                 {
                     int asks = TradeSync.Instance.AskCount;
                     string label = Lang.T("Trade", "Handeln") + (asks > 0 ? Lang.T(" (" + asks + " request)", " (" + asks + " Anfrage)") : "");
-                    if (GUILayout.Button(label)) { MenuOpen = false; TradeSync.Instance.Open = true; }
+                    if (GameSkin.LButton(label)) { MenuOpen = false; TradeSync.Instance.Open = true; }
                 }
-                if (ChatSync.Instance != null && GUILayout.Button(Lang.T("Chat (Enter)", "Chat (Enter)"))) { MenuOpen = false; ChatSync.Instance.RequestOpen(); }
-                if (GUILayout.Button(Lang.T("Leave co-op", "Co-op verlassen"))) { MenuOpen = false; plugin.CoopLeave(); }
+                if (ChatSync.Instance != null && GameSkin.LButton(Lang.T("Chat (Enter)", "Chat (Enter)"))) { MenuOpen = false; ChatSync.Instance.RequestOpen(); }
+                if (GameSkin.LButton(Lang.T("Leave co-op", "Co-op verlassen"))) { MenuOpen = false; plugin.CoopLeave(); }
             }
             else
             {
-                if (GUILayout.Button(Lang.T("Host via Steam (friends)", "Über Steam hosten (Freunde)"))) { MenuOpen = false; plugin.CoopHost(); }
-                if (GUILayout.Button(Lang.T("Host in the home network (LAN)", "Im Heimnetz hosten (LAN)"))) { MenuOpen = false; plugin.LanHost(); }
-                if (GUILayout.Button(Lang.T("Join ...", "Beitreten ..."))) { MenuOpen = false; JoinOpen = true; }
+                if (GameSkin.LButton(Lang.T("Host via Steam (friends)", "Über Steam hosten (Freunde)"))) { MenuOpen = false; plugin.CoopHost(); }
+                if (GameSkin.LButton(Lang.T("Host in the home network (LAN)", "Im Heimnetz hosten (LAN)"))) { MenuOpen = false; plugin.LanHost(); }
+                if (GameSkin.LButton(Lang.T("Join ...", "Beitreten ..."))) { MenuOpen = false; JoinOpen = true; }
             }
-            if (GUILayout.Button(Lang.T("Close", "Schließen"))) MenuOpen = false;
+            if (GameSkin.LButton(Lang.T("Close", "Schließen"))) MenuOpen = false;
             GUILayout.EndArea();
         }
     }

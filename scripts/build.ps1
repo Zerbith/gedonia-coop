@@ -17,7 +17,7 @@ $refs = @(
     "$managed\UnityEngine.AnimationModule.dll", "$managed\UnityEngine.ParticleSystemModule.dll", "$managed\UnityEngine.AudioModule.dll",
     "$managed\UnityEngine.IMGUIModule.dll", "$managed\UnityEngine.InputLegacyModule.dll",
     "$managed\UnityEngine.UnityWebRequestModule.dll", "$managed\UnityEngine.UnityWebRequestAudioModule.dll",
-    "$managed\Unity.Timeline.dll", "$managed\UnityEngine.DirectorModule.dll",
+    "$managed\Unity.Timeline.dll", "$managed\UnityEngine.DirectorModule.dll", "$managed\UnityEngine.ImageConversionModule.dll",
     "$managed\Assembly-CSharp.dll", "$managed\Assembly-CSharp-firstpass.dll", "$managed\AstarPathfindingProject.dll",
     "$core\BepInEx.dll", "$core\0Harmony.dll"
 ) | ForEach-Object { "/r:$_" }
