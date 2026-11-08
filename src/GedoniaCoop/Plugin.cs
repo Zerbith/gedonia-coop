@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -58,7 +58,7 @@ namespace GedoniaCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "gedonia.coop";
-        public const string Version = "0.9.5";
+        public const string Version = "0.9.6";
         const float SendInterval = 0.05f;
         const float AppearanceInterval = 1f;
         const float PeerTimeout = 5f;
@@ -496,7 +496,7 @@ namespace GedoniaCoop
             catch (Exception e)
             {
                 Log.LogError("LAN host failed: " + e);
-                coopUi.ShowNote(Lang.T("Could not host (port " + LanDiscovery.GamePort + " in use?)", "Hosten nicht möglich (Port " + LanDiscovery.GamePort + " belegt?)"), 8f);
+                coopUi.ShowNote(Lang.T("Could not host (port " + LanDiscovery.GamePort + " in use?)", "Hosten nicht mÃ¶glich (Port " + LanDiscovery.GamePort + " belegt?)"), 8f);
                 StartSteam(false, 0);
             }
         }
@@ -529,7 +529,7 @@ namespace GedoniaCoop
         {
             CoopHost();
             coopUi.ShowNote(Lang.T("Co-op hosting started. Load or start a game, then invite friends with the Co-op button (F8).",
-                "Co-op wird gehostet. Lade oder starte ein Spiel und lade dann Freunde über den Co-op-Knopf (F8) ein."), 8f);
+                "Co-op wird gehostet. Lade oder starte ein Spiel und lade dann Freunde Ã¼ber den Co-op-Knopf (F8) ein."), 8f);
         }
 
         public void OnMenuCoopJoin() { coopUi.JoinOpen = !coopUi.JoinOpen; coopUi.HostOpen = false; }
@@ -668,6 +668,7 @@ namespace GedoniaCoop
             // The status lives in the co-op menu now; only a version clash is
             // worth a line on screen.
             Event realEvent = ChatSync.BeginTestEvent();
+            GameSkin.BeginPass();
             string text = null;
             if (net != null && net.OtherVersion != 0)
                 text = "<color=#ff8060><b>" + Lang.T("A player has a different mod version (protocol " + net.OtherVersion + ", ours " + Net.ProtocolVersion + "); everyone needs the same version.",
@@ -1125,7 +1126,7 @@ namespace GedoniaCoop
             Time.timeScale = 1f;
             PausesSkipped++;
             Log.LogInfo(Stamp() + " Pause skipped: in co-op the game keeps running");
-            coopUi.ShowNote(Lang.T("Co-op: the game keeps running while the menu is open.", "Co-op: Das Spiel läuft weiter, während das Menü offen ist."), 4f);
+            coopUi.ShowNote(Lang.T("Co-op: the game keeps running while the menu is open.", "Co-op: Das Spiel lÃ¤uft weiter, wÃ¤hrend das MenÃ¼ offen ist."), 4f);
         }
 
         // Names are shown in a TextMesh (rich text) and NGUI labels (BBCode).
@@ -1574,7 +1575,7 @@ namespace GedoniaCoop
                         {
                             float best = float.MaxValue;
                             foreach (GameObject g in UnityEngine.Object.FindObjectsOfType<GameObject>())
-                                if (g.name.StartsWith("CoopRespawnCrystal") && Vector3.Distance(g.transform.position, player.transform.position) < best)
+                                if (g.name.StartsWith("CoopRespawn") && Vector3.Distance(g.transform.position, player.transform.position) < best)
                                 { best = Vector3.Distance(g.transform.position, player.transform.position); to = g.transform.position + new Vector3(1f, 1f, 0f); }
                         }
                         else
@@ -1639,6 +1640,10 @@ namespace GedoniaCoop
                     else if (step == "dialogstate") Log.LogInfo(Stamp() + " [dialog] " + (dialogue != null ? dialogue.Describe() : "-"));
                     else if (step == "leavedialog") InterfaceManager.instance.ExitDialogue();
                     else if (step == "loadtry") { Log.LogInfo(Stamp() + " Test: calling InterfaceManager.OnLoad"); InterfaceManager.instance.OnLoad(); Log.LogInfo("Test: load panel open=" + InterfaceManager.instance.panels[13].activeSelf); InterfaceManager.instance.panels[13].SetActive(false); }
+                    else if (step == "fieldfocus" || step == "fieldfocus:off") { GameSkin.TestFocus = step == "fieldfocus"; GameSkin.TestUnfocus = !GameSkin.TestFocus; Log.LogInfo(Stamp() + " Test: " + step); }
+                    else if (step.StartsWith("crystalspots:")) RespawnStones.TestSpots(step.Substring(13));
+                    else if (step == "statuesurvey") RespawnStones.TestStatues(player.transform.position);
+                    else if (step == "respawnmarkers") Log.LogInfo(Stamp() + " [respawnmarkers] " + respawn.DescribeMarkers());
                     else if (step == "coopleave") { Log.LogInfo(Stamp() + " Test: leaving co-op"); CoopLeave(); }
                     else if (step.StartsWith("journalpick:")) { InterfaceManager.instance.pickedEntry = int.Parse(step.Substring(12)); InterfaceManager.instance.RefreshJournal(); }
                     else if (step.StartsWith("gold:")) { Log.LogInfo(Stamp() + " Test: gold " + player.gold + " -> " + step.Substring(5)); player.gold = int.Parse(step.Substring(5)); }

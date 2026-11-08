@@ -163,6 +163,11 @@ namespace GedoniaCoop
                 promptStyle.fontSize = 20;
                 GameSkin.Plate(new Rect(sw / 2f - 300f, sh * 0.72f, 600f, 56f), RespawnStones.Banner, promptStyle); // below the death screen's buttons
             }
+            if (MountSync.Hint.Length > 0)
+            {
+                promptStyle.fontSize = 16;
+                GameSkin.Plate(new Rect(sw / 2f - 200f, sh * 0.62f, 400f, 40f), MountSync.Hint, promptStyle);
+            }
             if (t != null && t.InviteLobby != 0)
             {
                 promptStyle.fontSize = 16;

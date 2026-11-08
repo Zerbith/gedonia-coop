@@ -323,10 +323,37 @@ namespace GedoniaCoop
         public static string LTextField(string text, int max, params GUILayoutOption[] options)
         {
             Init();
-            if (!Ready) return GUILayout.TextField(text, max, options);
-            Rect r = GUILayoutUtility.GetRect(new GUIContent(text), field, options);
-            return TextField(r, text, max);
+            // Named, so we know when it has the keyboard: then the game gets no keys
+            // (same guards as the chat), e.g. typing "1" into the trade's gold field
+            // no longer uses the first quick slot.
+            string name = "CoopField" + (fieldCounter++);
+            Event e = Event.current;
+            bool had = GUI.GetNameOfFocusedControl() == name;
+            // Enter or Esc in the field, or a click anywhere else, gives the keyboard back to the game.
+            if (had && e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter || e.keyCode == KeyCode.Escape)) { GUIUtility.keyboardControl = 0; e.Use(); had = false; }
+            GUI.SetNextControlName(name);
+            string result;
+            Rect r;
+            if (!Ready) { result = GUILayout.TextField(text, max, options); r = GUILayoutUtility.GetLastRect(); }
+            else
+            {
+                r = GUILayoutUtility.GetRect(new GUIContent(text), field, options);
+                result = TextField(r, text, max);
+            }
+            if (had && e.type == EventType.MouseDown && !r.Contains(e.mousePosition)) GUIUtility.keyboardControl = 0;
+            if (TestFocus && name == "CoopField0" && GUI.GetNameOfFocusedControl() != name) GUI.FocusControl(name);
+            if (TestUnfocus && GUI.GetNameOfFocusedControl() == name) { GUIUtility.keyboardControl = 0; TestUnfocus = false; }
+            if (GUI.GetNameOfFocusedControl() == name) focusFrame = Time.frameCount;
+            return result;
         }
+
+        static int fieldCounter, focusFrame = -10;
+        // A mod text field (other than the chat) has the keyboard this or last frame.
+        public static bool FieldFocused { get { return Time.frameCount - focusFrame <= 1; } }
+
+        // Field names restart with every OnGUI pass, so they match from pass to pass.
+        public static void BeginPass() { fieldCounter = 0; }
+        public static bool TestFocus, TestUnfocus; // test step fieldfocus[:off]: the first mod text field takes / gives back the keyboard
 
         // Scroll views with a slim wood-coloured bar instead of IMGUI's grey one.
         static GUIStyle savedThumb;

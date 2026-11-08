@@ -83,7 +83,9 @@ namespace GedoniaCoop
             Transform t = src.transform;
             int actor;
             Transform root;
+            Transform mount = MountSync.Instance != null ? MountSync.Instance.MineRoot : null;
             if (player != null && t.IsChildOf(player.transform)) { actor = 0; root = player.transform; }
+            else if (mount != null && t.IsChildOf(mount)) { actor = MountActor; root = mount; } // our mount: steps, snorts, neighs
             else if (EnemySync.Instance == null || !EnemySync.Instance.SimulatedActor(t, out actor, out root)) return;
 
             if (now - windowStart >= 1f) { windowStart = now; sentInWindow = 0; }
@@ -156,6 +158,34 @@ namespace GedoniaCoop
             return null;
         }
 
+        const int MountActor = -1;
+        public int MutedSpeech;
+
+        // A source on the mount copy at the sender's path (copies keep their AudioSources).
+        static AudioSource MountSource(Transform root, string path)
+        {
+            Transform at = path.Length == 0 ? root : root.Find(path);
+            AudioSource src = at != null ? at.GetComponent<AudioSource>() : null;
+            if (src != null) return src;
+            if (at == null) at = root;
+            src = at.gameObject.AddComponent<AudioSource>();
+            src.playOnAwake = false;
+            src.spatialBlend = 1f;
+            src.rolloffMode = AudioRolloffMode.Logarithmic;
+            src.minDistance = 3f;
+            src.maxDistance = 50f;
+            src.dopplerLevel = 0f;
+            return src;
+        }
+
+        static bool SpokenBanditLine(Transform root, string clip)
+        {
+            FighterNPCModule f = root.GetComponentInChildren<FighterNPCModule>(true);
+            if (f == null || f.idleSounds == null || f.npc == null || f.npc.faction != NPCFaction.Bandits) return false;
+            foreach (AudioClip c in f.idleSounds) if (c != null && c.name == clip) return true;
+            return false;
+        }
+
         // A 3D source on the puppet, set up like our own player's source at that path.
         AudioSource PuppetSource(int player, Puppet p, string path)
         {
@@ -213,6 +243,12 @@ namespace GedoniaCoop
                         Puppet p = puppetOf(m.Sender);
                         if (p != null && Plugin.SameWorld(m.Sender) && p.Root.activeInHierarchy) src = PuppetSource(m.Sender, p, path);
                     }
+                    else if (actor == MountActor)
+                    {
+                        // The sender's mount, on the copy we show (or the stand-in we may ride).
+                        Transform root = MountSync.Instance != null ? MountSync.Instance.CopyRoot(m.Sender) : null;
+                        if (root != null) src = MountSource(root, path);
+                    }
                     else if (EnemySync.Instance != null)
                     {
                         Transform root = EnemySync.Instance.MirrorRoot(actor);
@@ -221,6 +257,9 @@ namespace GedoniaCoop
                             Transform at = path.Length == 0 ? root : root.Find(path);
                             src = at != null ? at.GetComponent<AudioSource>() : null;
                             if (src == null) src = root.GetComponentInChildren<AudioSource>();
+                            // German: an English player's PC still plays the bandits' spoken idle
+                            // lines (only our own game mutes them); they don't play here either.
+                            if (src != null && Lang.German && SpokenBanditLine(root, clipName)) { MutedSpeech++; continue; }
                         }
                     }
                     if (src == null || !src.isActiveAndEnabled) { NoTarget++; continue; }

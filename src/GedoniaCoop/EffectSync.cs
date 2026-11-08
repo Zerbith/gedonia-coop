@@ -175,6 +175,190 @@ namespace GedoniaCoop
             ParticlesSent++;
         }
 
+        // ---------- the game's hit-effect pool ----------
+        //
+        // Blood, sparks, blunt hits, parries, dirt/grass/wood/metal hits and the like
+        // come from EffectsPoolingManager.Instantiate(type, pos, rot), which only
+        // moves a pooled particle system there and plays it (with its sound). Every
+        // call on this PC is sent; others play the same pool entry at the same place,
+        // unless they just played that type there themselves (both sides often see
+        // the same hit: the hitter's weapon and the enemy's owner).
+        const byte KPool = 4;
+        bool poolReplaying;
+        readonly List<KeyValuePair<float, Vector4>> localPool = new List<KeyValuePair<float, Vector4>>();
+        public int PoolSent, PoolPlayed, PoolDeduped;
+
+        void OnPool(int type, Vector3 pos, Quaternion rot)
+        {
+            float now = Time.realtimeSinceStartup;
+            localPool.Add(new KeyValuePair<float, Vector4>(now, new Vector4(pos.x, pos.y, pos.z, type)));
+            if (localPool.Count > 64) localPool.RemoveRange(0, localPool.Count - 64);
+            if (poolReplaying || !Connected || !Budget()) return;
+            outW.Write(KPool); outW.Write((byte)type);
+            outW.Write(pos.x); outW.Write(pos.y); outW.Write(pos.z);
+            outW.Write(rot.x); outW.Write(rot.y); outW.Write(rot.z); outW.Write(rot.w);
+            outCount++;
+            PoolSent++;
+        }
+
+        void PlayPool(int type, Vector3 pos, Quaternion rot)
+        {
+            EffectsPoolingManager pm = EffectsPoolingManager.instance;
+            if (pm == null || pm.prefabs == null || type <= 0 || type >= pm.prefabs.Length) return;
+            float now = Time.realtimeSinceStartup;
+            foreach (KeyValuePair<float, Vector4> l in localPool)
+                if (now - l.Key < 0.4f && (int)l.Value.w == type && Vector3.Distance(new Vector3(l.Value.x, l.Value.y, l.Value.z), pos) < 1.5f) { PoolDeduped++; return; }
+            poolReplaying = true;
+            try { pm.Instantiate(type, pos, rot); }
+            finally { poolReplaying = false; }
+            PoolPlayed++;
+        }
+
+        [HarmonyPatch(typeof(EffectsPoolingManager), "Instantiate", new Type[] { typeof(int), typeof(Vector3), typeof(Quaternion) })]
+        static class PoolPatch
+        {
+            static void Postfix(int type, Vector3 pos, Quaternion rot)
+            {
+                EffectSync s = Instance;
+                if (s == null || Plugin.NoFix("pool")) return;
+                try { s.OnPool(type, pos, rot); }
+                catch (Exception e) { Plugin.Log.LogWarning("Pool effect capture failed: " + e.Message); }
+            }
+        }
+
+        // ---------- expedition sights that only ran where they happened ----------
+        //
+        // The reveal ritual (GameManager.BeginRevealRitual, run only by the player
+        // who talked to the scientist): his casting pose, the circle's particles and
+        // sound. The dungeon's exit (DungeonUseRepository): the entrance sinking back
+        // into the ground. Both are found by the event they belong to (nearest
+        // WorldEventBase to the sent position), which every PC has.
+        const byte KRitual = 5, KEntrance = 6;
+        GameObject ritualToby;
+        float ritualCheck, ritualSince;
+        public int RitualsSent, RitualsShown, EntrancesSent, EntrancesShown;
+
+        static WorldEventBase EventNear(Vector3 pos, float range)
+        {
+            WorldEventBase best = null;
+            float bestD = range;
+            foreach (WorldEventBase e in Object.FindObjectsOfType<WorldEventBase>())
+            {
+                float d = Vector3.Distance(e.transform.position, pos);
+                if (d < bestD) { bestD = d; best = e; }
+            }
+            return best;
+        }
+
+        static void SetRitual(GameObject toby, bool on)
+        {
+            if (toby == null) return;
+            Animator a = toby.GetComponent<Animator>();
+            if (a != null) a.SetBool("Casting2", on);
+            FighterNPCModule f = toby.GetComponent<FighterNPCModule>();
+            if (f != null && f.spawnPoint != null)
+            {
+                ParticleSystem ps = f.spawnPoint.GetComponent<ParticleSystem>();
+                AudioSource au = f.spawnPoint.GetComponent<AudioSource>();
+                if (ps != null) { if (on) ps.Play(); else ps.Stop(); }
+                if (au != null) { if (on) au.Play(); else au.Stop(); }
+            }
+            NPC n = toby.GetComponent<NPC>();
+            if (on && n != null && n.answerQuestmark != null) n.answerQuestmark.SetActive(false);
+        }
+
+        void OnRitual(GameObject toby, bool on)
+        {
+            if (on) { ritualToby = toby; ritualSince = Time.realtimeSinceStartup; }
+            if (!Connected || toby == null) return;
+            WorldEventBase e = toby.GetComponentInParent<WorldEventBase>();
+            Vector3 pos = e != null ? e.transform.position : toby.transform.position;
+            outW.Write(KRitual); outW.Write(on); outW.Write(pos.x); outW.Write(pos.y); outW.Write(pos.z);
+            outCount++;
+            outHasEnd = true; // reliable: a lost "off" would leave him casting
+            RitualsSent++;
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Expedition: reveal ritual " + (on ? "started" : "ended") + " here, sent");
+        }
+
+        // The ritual's end has no call of its own (a coroutine): watched here.
+        void TickRitual(float now)
+        {
+            if (ritualToby == null || now < ritualCheck) return;
+            ritualCheck = now + 0.5f;
+            if (now - ritualSince < 2f) return;
+            // RevealRoutine stops the circle's particles at the end (the Animator's
+            // bool reads false while it is culled, so it is only the fallback).
+            FighterNPCModule f = ritualToby.GetComponent<FighterNPCModule>();
+            ParticleSystem ps = f != null && f.spawnPoint != null ? f.spawnPoint.GetComponent<ParticleSystem>() : null;
+            Animator a = ritualToby.GetComponent<Animator>();
+            bool still = ps != null ? ps.isPlaying : (a != null && a.GetBool("Casting2"));
+            if (!still) { OnRitual(ritualToby, false); ritualToby = null; }
+        }
+
+        void ShowRitual(bool on, Vector3 pos)
+        {
+            WorldEventBase e = EventNear(pos, 10f);
+            if (e == null) return;
+            foreach (DialogueNPCModule d in e.GetComponentsInChildren<DialogueNPCModule>(true))
+            {
+                if (d.GetComponent<FighterNPCModule>() == null) continue;
+                SetRitual(d.gameObject, on);
+                RitualsShown++;
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Expedition: reveal ritual " + (on ? "shown" : "ended") + " at " + d.name);
+                return;
+            }
+        }
+
+        void OnEntranceDown(Vector3 eventPos)
+        {
+            if (!Connected) return;
+            outW.Write(KEntrance); outW.Write(eventPos.x); outW.Write(eventPos.y); outW.Write(eventPos.z);
+            outCount++;
+            outHasEnd = true;
+            EntrancesSent++;
+        }
+
+        void ShowEntranceDown(Vector3 pos)
+        {
+            WorldEventBase e = EventNear(pos, 10f);
+            if (e == null) return;
+            foreach (Transform t in e.GetComponentsInChildren<Transform>(true))
+            {
+                if (!t.name.StartsWith("DungeonEntrance") || t.childCount < 2) continue;
+                TweenPosition tw = t.GetChild(1).GetComponent<TweenPosition>();
+                if (tw == null) continue;
+                tw.PlayReverse();
+                EntrancesShown++;
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Expedition: dungeon entrance sinks (someone else left the dungeon)");
+                return;
+            }
+        }
+
+        [HarmonyPatch(typeof(GameManager), "BeginRevealRitual")]
+        static class RitualPatch
+        {
+            static void Prefix(out GameObject __state) { __state = InterfaceManager.instance != null ? InterfaceManager.instance.currentTalkTarget : null; }
+            static void Postfix(GameObject __state)
+            {
+                if (Instance != null && __state != null) { try { Instance.OnRitual(__state, true); } catch (Exception e) { Plugin.Log.LogWarning("Ritual capture failed: " + e.Message); } }
+            }
+        }
+
+        [HarmonyPatch(typeof(GameManager), "DungeonUseRepository")]
+        static class EntrancePatch
+        {
+            static void Postfix(GameObject repository)
+            {
+                if (Instance == null || repository == null) return;
+                try
+                {
+                    Transform ev = repository.transform.parent.parent.parent.parent;
+                    Instance.OnEntranceDown(ev.position);
+                }
+                catch (Exception e) { Plugin.Log.LogWarning("Entrance capture failed: " + e.Message); }
+            }
+        }
+
         // Stop() of a particle system sent by OnParticlePlay. Reliable, as a lost one
         // would leave the copy running (it may loop).
         void OnParticleStop(ParticleSystem ps)
@@ -326,6 +510,24 @@ namespace GedoniaCoop
                             for (int q = 0; q < lines[l].Length; q++) lines[l][q] = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
                         }
                         if (here) Spawn(m.Sender, id, index, attach, actor, path, pos, rot, lines);
+                    }
+                    else if (kind == KRitual)
+                    {
+                        bool on = r.ReadBoolean();
+                        Vector3 pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                        if (here) ShowRitual(on, pos);
+                    }
+                    else if (kind == KEntrance)
+                    {
+                        Vector3 pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                        if (here) ShowEntranceDown(pos);
+                    }
+                    else if (kind == KPool)
+                    {
+                        int type = r.ReadByte();
+                        Vector3 pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                        Quaternion rot = new Quaternion(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                        if (here && Vector3.Distance(pos, PlayerScript.instance.transform.position) < 80f) PlayPool(type, pos, rot);
                     }
                     else if (kind == KEnd)
                     {
@@ -518,6 +720,7 @@ namespace GedoniaCoop
             CapturePending();
             CheckEnded();
             CapLoops();
+            TickRitual(now);
             if (now >= nextFlush)
             {
                 nextFlush = now + 0.05f;
@@ -534,7 +737,7 @@ namespace GedoniaCoop
 
         public string Summary()
         {
-            return "effects sent=" + SpawnsSent + "+" + ParticlesSent + "p stops=" + StopsSent + " ends=" + EndsSent + " capped=" + Capped + " shown=" + SpawnsShown + "+" + ParticlesShown + "p stopsShown=" + StopsShown + " capStops=" + CapStops + " deduped=" + Deduped + " noTarget=" + NoTarget + " skipped=" + Skipped;
+            return "effects sent=" + SpawnsSent + "+" + ParticlesSent + "p stops=" + StopsSent + " ends=" + EndsSent + " capped=" + Capped + " shown=" + SpawnsShown + "+" + ParticlesShown + "p stopsShown=" + StopsShown + " capStops=" + CapStops + " deduped=" + Deduped + " noTarget=" + NoTarget + " skipped=" + Skipped + " pool sent=" + PoolSent + " played=" + PoolPlayed + " deduped=" + PoolDeduped + " rituals=" + RitualsSent + "/" + RitualsShown + " entrances=" + EntrancesSent + "/" + EntrancesShown;
         }
 
         // ---------- Harmony ----------

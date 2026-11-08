@@ -80,7 +80,10 @@ WHAT IS SHARED
 - You see each other with your looks, gear, weapons, arrows and spells, and your Steam name
   above your head - also the others' spell and combat effects (healing, elements, weapon
   trails), and the enemies' shots and spells.
-- Mounts: whoever calls or rides a mount is seen with it by the others.
+- Mounts: whoever calls or rides a mount is seen with it by the others, with its sounds. Anyone
+  can ride a mount another player has called (walk up to it, F as usual); while you ride it,
+  its owner's one is gone, and it stands where you get off. Next to a mount someone rides, F
+  seats you behind the rider (F again to get off).
 - Doors: when someone opens or closes a door, it happens for everyone. A door stays open
   while one of you still stands right next to it.
 - Group: co-op menu (F8) -> "Group" to invite others (accept/decline there). Whoever invites
@@ -138,11 +141,13 @@ WHAT IS SHARED
 
 DYING IN CO-OP
 --------------
-The villages have glowing respawn crystals. Stand in front of one, look at it and press F
-(like talking to someone) to bind yourself to it. If you die in co-op, you get up again at
-the last crystal you bound to after 10 seconds (without a crystal:
-where you entered the world).
-Crystals: Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, the explorers' camp,
+Respawn points are angel statues: in Weystane and Ertoron the statue that already stands there,
+elsewhere the same statue on a plinth. A small gold angel marks them on the minimap and the world
+map (the one you are bound to is brighter). Stand in front of one, look at it and press F (like
+talking to someone) to bind yourself to it. If you die in co-op, you get up again at the last
+statue you bound to after 10 seconds (not bound: the nearest place you have been to, else where
+you entered the world).
+Statues: Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, the explorers' camp,
 Erynard, the Ironclad clan and the Sons of Thunder.
 While other players are connected, the death screen shows only the countdown (no "Load game",
 no "Return to menu") and the pause menu has no "Load game": loading would turn back the world

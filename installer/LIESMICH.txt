@@ -106,7 +106,10 @@ WAS GEMEINSAM IST
 - Ihr seht euch mit eurem Aussehen, eurer Ausruestung, Waffen, Pfeilen und Zaubern -
   auch Zauber- und Kampfeffekte (Heilung, Elemente, Waffenspuren) der anderen, und die
   Geschosse und Zauber der Gegner.
-- Reittiere: Wer sein Reittier ruft oder darauf reitet, ist fuer die anderen damit zu sehen.
+- Reittiere: Wer sein Reittier ruft oder darauf reitet, ist fuer die anderen damit zu sehen und
+  zu hoeren. Jeder kann auf das gerufene Reittier eines anderen steigen (hingehen, F wie
+  gewohnt); solange er reitet, ist es beim Besitzer weg, und es steht dann dort, wo er absteigt.
+  Neben einem Reittier, auf dem jemand sitzt, setzt F dich hinter den Reiter (F nochmal: absteigen).
 - Tueren: Oeffnet oder schliesst einer eine Tuer, passiert das bei allen. Eine Tuer bleibt
   offen, solange noch jemand von euch direkt daneben steht.
 - Gruppe: Im Co-op-Menue (F8) -> "Gruppe" ladet ihr andere ein (annehmen/ablehnen dort).
@@ -166,10 +169,13 @@ WAS GEMEINSAM IST
 
 STERBEN IM CO-OP
 ----------------
-In den Doerfern stehen leuchtende Wiederbelebungskristalle. Davor stehen, Kamera darauf
-richten und F druecken (wie beim Sprechen): dann ist man an ihn gebunden. Stirbt man im
-Co-op, steht man nach 10 Sekunden am zuletzt gebundenen Kristall wieder auf (ohne Kristall: dort, wo man in die Welt gekommen ist).
-Kristalle gibt es in Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, im
+Wiederbelebungspunkte sind Engelsstatuen: In Weystane und Ertoron die Statue, die dort schon
+steht, in den anderen Orten eine gleiche Statue auf einem Sockel. Auf Minimap und Weltkarte
+zeigt sie ein kleiner goldener Engel (der Punkt, an den du gebunden bist, heller). Davor
+stehen, Kamera darauf richten und F druecken (wie beim Sprechen): dann ist man an sie gebunden.
+Stirbt man im Co-op, steht man nach 10 Sekunden an der zuletzt gebundenen Statue wieder auf
+(ohne Bindung: im naechsten schon besuchten Ort, sonst dort, wo man in die Welt gekommen ist).
+Statuen gibt es in Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, im
 Forscherlager sowie in Erynard, beim Eisenklan und bei den Soehnen des Donners.
 Solange andere Spieler verbunden sind, zeigt der Todesbildschirm nur den Countdown bis zur
 Wiederbelebung (kein "Spiel laden", kein "Zurueck zum Menue"), und im Pausemenue fehlt "Spiel

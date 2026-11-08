@@ -25,15 +25,17 @@ namespace GedoniaCoop
         // loaded (test step gotocrystal with -coop-test-crystalwait). Searching
         // on each PC placed it differently where the water came in late (a
         // friend's Weystane crystal stood in the pond).
-        struct Village { public string World, Name; public float X, Z; public bool Fixed; public float SX, SZ; public bool HasSpot; }
+        struct Village { public string World, Name; public float X, Z; public bool Fixed; public float SX, SZ; public bool HasSpot, Statue; }
         static readonly Village[] Villages =
         {
             // measured 2026-10-26 (survey run, 15 s settle, room around, 8 m from water; screenshots checked)
-            G("Weystane", 728.0f, 627.0f), G("Steepport", 93.1f, 353.6f), G("Stawford", 1440.2f, 266.8f), G("Fayreach", 762.2f, -701.4f),
-            G("Korram", 2123.3f, 420.0f), G("Ertoron", 1238.0f, -397.0f), G("Explorer's camp", 562.3f, -1025.9f),
-            N("Erynard", -440f, 240f, -440.0f, 240.0f), N("Ironclad clan", 220f, -835f, 220.0f, -829.0f), N("Sons of Thunder", -1070f, 1255f, -1064.0f, 1255.0f),
+            S("Weystane", 733.4f, 638.6f), G("Steepport", 93.1f, 353.6f), G("Stawford", 1440.2f, 266.8f), G("Fayreach", 762.2f, -701.4f),
+            G("Korram", 2123.3f, 420.0f), S("Ertoron", 1302.1f, -423.6f), G("Explorer's camp", 566.3f, -1021.9f),
+            N("Erynard", -440f, 240f, -440.0f, 240.0f), N("Ironclad clan", 220f, -835f, 220.0f, -829.0f), N("Sons of Thunder", -1070f, 1255f, -1076.0f, 1244.6f),
         };
         static Village G(string name, float sx, float sz) { return new Village { World = "Gedonia", Name = name, SX = sx, SZ = sz, HasSpot = true }; }
+        // The village has an angel statue of its own (SM_Prop_Statue_Angel_01): that is the point.
+        static Village S(string name, float sx, float sz) { return new Village { World = "Gedonia", Name = name, SX = sx, SZ = sz, HasSpot = true, Statue = true }; }
         static Village N(string name, float x, float z, float sx, float sz) { return new Village { World = "NorthernKingdoms", Name = name, X = x, Z = z, Fixed = true, SX = sx, SZ = sz, HasSpot = true }; }
 
         // The ground at a measured spot (not water); false while it hasn't streamed in.
@@ -93,6 +95,7 @@ namespace GedoniaCoop
             if (loadedFor != SaveKey) { loadedFor = SaveKey; bound = LoadBinding(); }
             PlaceAndBind(player);
             DeathButtons(connected);
+            TickMarkers(player);
             PauseButtons(connected);
 
             if (invincibleUntil > 0f && now >= invincibleUntil) { Traverse.Create(player).Field("invincibility").SetValue(false); invincibleUntil = -1f; }
@@ -239,10 +242,298 @@ namespace GedoniaCoop
             }
         }
 
+        // ---------- respawn points: angel statues ----------
+        //
+        // Villages with an angel statue of their own (Weystane, Ertoron) use it: only
+        // an invisible spot for F is added. Everywhere else a copy of that statue on
+        // a plinth stands at the measured spot, built from the game's own meshes
+        // (SM_Prop_Statue_Angel_01, SM_Prop_Statue_Plinth_03, material
+        // PolygonFantasyKingdom_Mat_01_A) once they are loaded - until then the old
+        // crystal stands in and is swapped as soon as the model can be had.
+        readonly Dictionary<string, string> kinds = new Dictionary<string, string>();
+        static Mesh angelMesh, plinthMesh;
+        static Material statueMat;
+        static float nextModelTry;
+
+        static bool StatueModel()
+        {
+            if (angelMesh != null && statueMat != null) return true;
+            if (Time.realtimeSinceStartup < nextModelTry) return false;
+            nextModelTry = Time.realtimeSinceStartup + 5f;
+            foreach (Mesh m in Resources.FindObjectsOfTypeAll<Mesh>())
+            {
+                if (m == null) continue;
+                if (m.name == "SM_Prop_Statue_Angel_01") angelMesh = m;
+                else if (m.name == "SM_Prop_Statue_Plinth_03" || (plinthMesh == null && m.name.StartsWith("SM_Prop_Statue_Plinth"))) plinthMesh = m;
+            }
+            foreach (Material m in Resources.FindObjectsOfTypeAll<Material>())
+                if (m != null && m.name == "PolygonFantasyKingdom_Mat_01_A") { statueMat = m; break; }
+            if (angelMesh != null && statueMat != null)
+                Plugin.Log.LogInfo("Respawn statue model found: " + angelMesh.name + " (" + angelMesh.bounds.size.ToString("F2") + "), plinth " + (plinthMesh != null ? plinthMesh.name + " (" + plinthMesh.bounds.size.ToString("F2") + ")" : "none"));
+            return angelMesh != null && statueMat != null;
+        }
+
+        static GameObject Part(string name, Transform parent, Mesh mesh, Vector3 local)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = local;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = statueMat;
+            return go;
+        }
+
+        GameObject BuildPoint(Village vil, Vector3 at, Vector3 middle, out string kind)
+        {
+            GameObject g;
+            float interactY = 1f, radius = 1.2f;
+            if (vil.Statue)
+            {
+                g = new GameObject("CoopRespawnStatue (" + vil.Name + ", the village's own)");
+                g.transform.position = at;
+                kind = "the village's own angel statue";
+                interactY = 1.8f; radius = 1.9f;
+            }
+            else if (StatueModel())
+            {
+                g = new GameObject("CoopRespawnStatue (" + vil.Name + ")");
+                g.transform.position = at;
+                // Facing the village's middle.
+                Vector3 to = middle - at; to.y = 0f;
+                if (to.sqrMagnitude > 1f) g.transform.rotation = Quaternion.LookRotation(to.normalized);
+                float top = 0f;
+                if (plinthMesh != null) { Part("Plinth", g.transform, plinthMesh, Vector3.zero); top = plinthMesh.bounds.max.y; }
+                Part("Angel", g.transform, angelMesh, new Vector3(0f, top, 0f));
+                // Solid, so nobody walks through it.
+                Bounds b = angelMesh.bounds;
+                BoxCollider box = g.AddComponent<BoxCollider>();
+                float w = plinthMesh != null ? Mathf.Max(plinthMesh.bounds.size.x, plinthMesh.bounds.size.z) : Mathf.Max(b.size.x, b.size.z) * 0.6f;
+                box.size = new Vector3(w, top + b.size.y, w);
+                box.center = new Vector3(0f, (top + b.size.y) / 2f, 0f);
+                kind = "angel statue copy";
+                interactY = Mathf.Min(1.5f, top + 0.5f); radius = Mathf.Max(1.6f, w * 0.75f);
+            }
+            else
+            {
+                GameObject proto = Resources.Load<GameObject>("Expeditions/MinableCrystals");
+                if (proto == null) { kind = "none"; return null; }
+                g = UnityEngine.Object.Instantiate(proto, at, Quaternion.identity);
+                // Only its look: no script (it is a minable crystal) and nothing
+                // to hit or interact with.
+                foreach (MonoBehaviour mb in g.GetComponentsInChildren<MonoBehaviour>(true)) UnityEngine.Object.DestroyImmediate(mb);
+                foreach (Collider col in g.GetComponentsInChildren<Collider>(true)) UnityEngine.Object.DestroyImmediate(col);
+                g.name = "CoopRespawnCrystal (" + vil.Name + ")";
+                kind = "crystal (statue model not loaded yet)";
+            }
+            // Something the game's interaction finds (OverlapSphere 2.7 m on
+            // Default/NPCs/Player, in front of the camera): F binds.
+            GameObject spot = new GameObject("CoopCrystalInteract");
+            spot.transform.SetParent(g.transform, false);
+            spot.transform.localPosition = new Vector3(0f, interactY, 0f);
+            spot.layer = 0;
+            try { spot.tag = "Interactable"; } catch (Exception) { }
+            SphereCollider sc = spot.AddComponent<SphereCollider>();
+            sc.isTrigger = true;
+            sc.radius = radius;
+            CoopCrystal cc = spot.AddComponent<CoopCrystal>();
+            cc.Village = vil.Name;
+            cc.Owner = this;
+            cc.Statue = !kind.StartsWith("crystal");
+            g.SetActive(true);
+            return g;
+        }
+
+        // ---------- map symbols for the respawn points ----------
+        //
+        // A small gold angel (halo, wings, robe; drawn here, no game art) on the
+        // minimap and the world map for every respawn point of the world we are in;
+        // the one we are bound to is brighter and larger. Placed with the formulas
+        // MapMarkers uses for the players.
+        class PointMarker { public GameObject Mini, World, Compass; public UITexture MiniTex, WorldTex, CompassTex; }
+        readonly Dictionary<string, PointMarker> markers = new Dictionary<string, PointMarker>();
+        static Texture2D angelIcon;
+        public static bool NoMarkers; // -NoFix respawnicons
+
+        static Texture2D AngelIcon()
+        {
+            if (angelIcon != null) return angelIcon;
+            const int N = 48;
+            angelIcon = new Texture2D(N, N, TextureFormat.RGBA32, false);
+            angelIcon.filterMode = FilterMode.Bilinear;
+            Color fill = new Color(1f, 0.86f, 0.42f, 1f), edge = new Color(0.12f, 0.08f, 0.02f, 1f), clear = new Color(0, 0, 0, 0);
+            // Shape as distance fields (y up): halo ring, head, robe (trapezoid), two wings.
+            System.Func<float, float, bool> inside = (x, y) =>
+            {
+                float hx = x - 24f, hy = y - 41f;
+                float halo = Mathf.Sqrt(hx * hx / 36f + hy * hy / 4f);
+                if (halo > 0.75f && halo < 1.15f) return true;
+                float dx = x - 24f, dy = y - 33f;
+                if (dx * dx + dy * dy < 16f) return true; // head
+                if (y > 6f && y < 29f) { float half = 3f + (29f - y) * 0.32f; if (Mathf.Abs(x - 24f) < half) return true; } // robe
+                for (int s = -1; s <= 1; s += 2) // wings: ellipses tilted up and out
+                {
+                    float wx = (x - 24f) * s - 10f, wy = y - 24f;
+                    float rx = wx * 0.82f + wy * 0.57f, ry = -wx * 0.57f + wy * 0.82f;
+                    if (rx * rx / 110f + ry * ry / 22f < 1f && (x - 24f) * s > 3f) return true;
+                }
+                return false;
+            };
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float px = x + 0.5f, py = y + 0.5f;
+                    bool i = inside(px, py);
+                    bool near = false;
+                    if (!i) for (int k = 0; k < 8 && !near; k++) near = inside(px + 2f * Mathf.Cos(k * Mathf.PI / 4f), py + 2f * Mathf.Sin(k * Mathf.PI / 4f));
+                    angelIcon.SetPixel(x, y, i ? fill : near ? edge : clear);
+                }
+            angelIcon.Apply();
+            return angelIcon;
+        }
+
+        void TickMarkers(PlayerScript player)
+        {
+            InterfaceManager im = InterfaceManager.instance;
+            if (im == null || im.minimapPlayer == null || im.worldMapPlayer == null || NoMarkers) return;
+            UITexture own = im.minimapPlayer.GetComponentInChildren<UITexture>(true);
+            UITexture ownWorld = im.worldMapPlayer.GetComponentInChildren<UITexture>(true);
+            bool dungeon = player.transform.position.y < -500f || (GameManager.instance != null && GameManager.instance.currentLoadedWorld == null);
+            Camera cam = MinimapCamera.instance != null ? MinimapCamera.instance.GetComponent<Camera>() : null;
+            float metres = cam != null && cam.orthographic ? cam.orthographicSize : 40f;
+            foreach (Village vil in Villages)
+            {
+                PointMarker m;
+                if (!markers.TryGetValue(vil.Name, out m))
+                {
+                    m = new PointMarker();
+                    if (own != null)
+                    {
+                        m.Mini = new GameObject("CoopRespawnMini (" + vil.Name + ")");
+                        m.Mini.layer = own.gameObject.layer;
+                        m.Mini.transform.SetParent(im.minimapPlayer.parent, false);
+                        m.MiniTex = m.Mini.AddComponent<UITexture>();
+                        m.MiniTex.mainTexture = AngelIcon();
+                        m.MiniTex.width = m.MiniTex.height = 48;
+                        m.MiniTex.depth = own.depth - 2; // under the player arrows
+                    }
+                    if (ownWorld != null)
+                    {
+                        m.World = new GameObject("CoopRespawnWorld (" + vil.Name + ")");
+                        m.World.layer = ownWorld.gameObject.layer;
+                        m.World.transform.SetParent(im.worldMapPlayer.parent, false);
+                        m.WorldTex = m.World.AddComponent<UITexture>();
+                        m.WorldTex.mainTexture = AngelIcon();
+                        m.WorldTex.width = m.WorldTex.height = 40;
+                        m.WorldTex.depth = ownWorld.depth; // over the fog of unexplored land, like the player arrow
+                    }
+                    markers[vil.Name] = m;
+                }
+                bool here = vil.World == world && !dungeon;
+                bool isBound = bound == vil.Name;
+                Color tint = isBound ? Color.white : new Color(0.85f, 0.8f, 0.7f, 0.9f);
+                Vector3 p;
+                if (!spots.TryGetValue(vil.Name, out p)) p = new Vector3(vil.SX, 0f, vil.SZ);
+                // Minimap: north-up picture, own arrow in the middle; only those on it.
+                if (m.Mini != null)
+                {
+                    Transform t = m.Mini.transform;
+                    float rim = 0.10f / Mathf.Max(1e-6f, t.parent.lossyScale.x);
+                    Vector3 d = p - player.transform.position;
+                    Vector3 off = new Vector3(d.x, d.z, 0f) / metres * rim;
+                    bool show = here && im.minimapNotCompass && off.magnitude < rim * 0.95f;
+                    if (m.Mini.activeSelf != show) m.Mini.SetActive(show);
+                    if (show)
+                    {
+                        t.localPosition = im.minimapPlayer.localPosition + off;
+                        t.localRotation = Quaternion.identity;
+                        t.localScale = (own != null ? own.transform.localScale : Vector3.one) * (isBound ? 0.75f : 0.6f);
+                        m.MiniTex.color = tint;
+                    }
+                }
+                // Compass strip (players who use it instead of the minimap): the
+                // bound point always (at the edge when behind), others within 200 m
+                // when they lie in the strip's view. Same scale as the quest marker.
+                if (m.Compass == null && im.markerOnMinimap != null)
+                {
+                    m.Compass = new GameObject("CoopRespawnCompass (" + vil.Name + ")");
+                    m.Compass.layer = im.markerOnMinimap.layer;
+                    m.Compass.transform.SetParent(im.markerOnMinimap.transform.parent.parent, false);
+                    m.CompassTex = m.Compass.AddComponent<UITexture>();
+                    m.CompassTex.mainTexture = AngelIcon();
+                    m.CompassTex.width = m.CompassTex.height = 34;
+                    UIWidget qw = im.markerOnMinimap.GetComponentInChildren<UIWidget>(true);
+                    m.CompassTex.depth = qw != null ? qw.depth : 10;
+                }
+                if (m.Compass != null)
+                {
+                    Vector3 d = p - player.transform.position;
+                    float dist = new Vector2(d.x, d.z).magnitude;
+                    float bearing = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+                    float x = Mathf.DeltaAngle(player.transform.eulerAngles.y, bearing) * 2.777777f;
+                    UIPanel strip = m.Compass.transform.parent.GetComponent<UIPanel>();
+                    bool clipped = strip != null && strip.clipping != UIDrawCall.Clipping.None;
+                    float half = clipped ? strip.finalClipRegion.z / 2f - 12f : 300f;
+                    float centre = clipped ? strip.finalClipRegion.x : 0f;
+                    bool show = here && !im.minimapNotCompass && (isBound || (dist < 200f && Mathf.Abs(x) <= half));
+                    if (m.Compass.activeSelf != show) m.Compass.SetActive(show);
+                    if (show)
+                    {
+                        x = Mathf.Clamp(x, -half, half);
+                        m.Compass.transform.localPosition = new Vector3(centre + x, im.markerOnMinimap.transform.localPosition.y + 2f, 0f);
+                        m.Compass.transform.localScale = Vector3.one * (isBound ? 1.15f : 0.9f);
+                        m.CompassTex.color = tint;
+                    }
+                }
+                if (m.World != null)
+                {
+                    Vector3 lp = new Vector3(p.x, p.z, 0f) * im.worldmapScale + im.worldmapdelta + im.hubWorldDelta * im.worldmapScale;
+                    bool show = here && Mathf.Abs(lp.x) < 430f && Mathf.Abs(lp.y) < 390f;
+                    if (m.World.activeSelf != show) m.World.SetActive(show);
+                    if (show)
+                    {
+                        m.World.transform.localPosition = lp;
+                        m.World.transform.rotation = im.worldMapPlayer.parent.rotation;
+                        m.World.transform.localScale = Vector3.one * (isBound ? 1.25f : 1f);
+                        m.WorldTex.color = tint;
+                    }
+                }
+            }
+        }
+
+        // Test step respawnmarkers: what the map symbols show.
+        public string DescribeMarkers()
+        {
+            string s = "";
+            foreach (KeyValuePair<string, PointMarker> kv in markers)
+                s += " " + kv.Key + "[mini=" + (kv.Value.Mini != null && kv.Value.Mini.activeInHierarchy ? kv.Value.Mini.transform.localPosition.ToString("F0") : "off") + " compass=" + (kv.Value.Compass != null && kv.Value.Compass.activeInHierarchy ? kv.Value.Compass.transform.localPosition.x.ToString("F0") : "off") +
+                    " world=" + (kv.Value.World != null && kv.Value.World.activeSelf ? kv.Value.World.transform.localPosition.ToString("F0") : "off") + "]";
+            string k2 = "";
+            foreach (KeyValuePair<string, string> k in kinds) k2 += " " + k.Key + "=" + k.Value;
+            return "points:" + k2 + " | markers:" + s;
+        }
+
+        // Where a revived player stands: beside the point (a statue is wider).
+        Vector3 ReviveOffset(string village)
+        {
+            string k;
+            return kinds.TryGetValue(village, out k) && !k.StartsWith("crystal") ? new Vector3(2.8f, 1f, 0f) : new Vector3(2f, 1f, 0f);
+        }
+
         void PlaceAndBind(PlayerScript player)
         {
             if (GameManager.instance == null) return;
             Vector3 me = player.transform.position;
+            // A crystal that stood in for the statue goes once the model is there.
+            foreach (Village vil in Villages)
+            {
+                string k;
+                if (vil.World != world || !kinds.TryGetValue(vil.Name, out k) || !k.StartsWith("crystal") || !StatueModel()) continue;
+                GameObject old;
+                if (stones.TryGetValue(vil.Name, out old) && old != null) UnityEngine.Object.Destroy(old);
+                stones.Remove(vil.Name);
+                kinds.Remove(vil.Name);
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Respawn point of " + vil.Name + ": the crystal makes way for the statue");
+            }
             foreach (Village vil in Villages)
             {
                 if (vil.World != world) continue;
@@ -263,38 +554,20 @@ namespace GedoniaCoop
                     string why;
                     if (vil.HasSpot && !Survey) { if (!Ground(vil, out at)) continue; why = "measured spot"; }
                     else if (!DrySpot(center, out at, out why)) continue;
-                    GameObject proto = Resources.Load<GameObject>("Expeditions/MinableCrystals");
-                    if (proto == null) continue;
-                    GameObject g = UnityEngine.Object.Instantiate(proto, at, Quaternion.identity);
-                    // Only its look: no script (it is a minable crystal) and nothing
-                    // to hit or interact with.
-                    foreach (MonoBehaviour mb in g.GetComponentsInChildren<MonoBehaviour>(true)) UnityEngine.Object.DestroyImmediate(mb);
-                    foreach (Collider col in g.GetComponentsInChildren<Collider>(true)) UnityEngine.Object.DestroyImmediate(col);
-                    g.name = "CoopRespawnCrystal (" + v + ")";
-                    // Something the game's interaction finds (OverlapSphere 2.7 m on
-                    // Default/NPCs/Player, in front of the camera): F binds.
-                    GameObject spot = new GameObject("CoopCrystalInteract");
-                    spot.transform.SetParent(g.transform, false);
-                    spot.transform.localPosition = new Vector3(0f, 1f, 0f);
-                    spot.layer = 0;
-                    try { spot.tag = "Interactable"; } catch (Exception) { }
-                    SphereCollider sc = spot.AddComponent<SphereCollider>();
-                    sc.isTrigger = true;
-                    sc.radius = 1.2f;
-                    CoopCrystal cc = spot.AddComponent<CoopCrystal>();
-                    cc.Village = v;
-                    cc.Owner = this;
-                    g.SetActive(true);
+                    string kind;
+                    GameObject g = BuildPoint(vil, at, center, out kind);
+                    if (g == null) continue;
                     stones[v] = g;
+                    kinds[v] = kind;
                     spots[v] = at;
                     visited.Add(v);
-                    Plugin.Log.LogInfo(Plugin.Stamp() + " Respawn crystal of " + v + " placed at " + at.ToString("F1") + " (" + why + ")");
+                    Plugin.Log.LogInfo(Plugin.Stamp() + " Respawn point of " + v + " placed at " + at.ToString("F1") + ": " + kind + " (" + why + ")");
                     if (pendingVillage == v)
                     {
                         // Revived into this village before its crystal stood: step to it.
                         pendingVillage = "";
                         player._char.enabled = false;
-                        player.transform.position = at + new Vector3(2f, 1f, 0f);
+                        player.transform.position = at + ReviveOffset(v);
                         player._char.enabled = true;
                         Plugin.Log.LogInfo(Plugin.Stamp() + " Moved to the crystal of " + v + " after the revive");
                     }
@@ -303,6 +576,7 @@ namespace GedoniaCoop
         }
 
         public bool IsBound(string v) { return bound == v; }
+        bool IsStatue(string v) { string k; return kinds.TryGetValue(v, out k) && !k.StartsWith("crystal"); }
 
 
         // The player pressed F at the crystal of v.
@@ -313,19 +587,90 @@ namespace GedoniaCoop
             if (Vector3.Distance(player.transform.position, stones[v].transform.position) > BindRange + 2f) return;
             if (bound == v)
             {
-                if (InterfaceManager.instance != null) InterfaceManager.instance.screenMessages.Add("You are already bound to this crystal.", Color.white, 2f);
+                if (InterfaceManager.instance != null) InterfaceManager.instance.screenMessages.Add(IsStatue(v) ? Lang.T("You are already bound to this angel statue.", "Du bist schon an diese Engelsstatue gebunden.") : "You are already bound to this crystal.", Color.white, 2f);
                 return;
             }
             bound = v;
             SaveBinding(v);
             Binds++;
-            if (InterfaceManager.instance != null) InterfaceManager.instance.screenMessagesLarge.Add("Respawn crystal: " + v, Color.white, 3f);
+            string de = Lang.German ? Translator.German(v) : null;
+            if (InterfaceManager.instance != null) InterfaceManager.instance.screenMessagesLarge.Add(IsStatue(v) ? Lang.T("Respawn point: " + v, "Wiederbelebungspunkt: " + (de ?? v)) : "Respawn crystal: " + v, Color.white, 3f);
             Plugin.Log.LogInfo(Plugin.Stamp() + " Bound to the respawn crystal of " + v + " (F)");
         }
 
         // A spot on terrain (not a roof), not under a water surface (layer
         // "Water" above the ground; the sea plane lies far below land), and not
         // steep - the nearest one to the middle, in rings 6 m apart.
+        // Test step statuesurvey: loaded objects whose name sounds like a statue or
+        // shrine, near the player (300 m), with mesh, scene and whether they are
+        // part of a prefab we could load.
+        public static void TestStatues(Vector3 near)
+        {
+            string[] words = { "statue", "angel", "shrine", "idol", "monument", "goddess", "altar", "wing" };
+            int n = 0;
+            foreach (MeshFilter mf in Resources.FindObjectsOfTypeAll<MeshFilter>())
+            {
+                if (mf == null || !mf.gameObject.scene.IsValid()) continue;
+                string nm = mf.gameObject.name.ToLowerInvariant(), mesh = mf.sharedMesh != null ? mf.sharedMesh.name.ToLowerInvariant() : "";
+                bool hit = false;
+                foreach (string w in words) if (nm.Contains(w) || mesh.Contains(w)) { hit = true; break; }
+                if (!hit) continue;
+                float d = Vector3.Distance(mf.transform.position, near);
+                if (d > 300f) continue;
+                string path = mf.name; for (Transform t = mf.transform.parent; t != null; t = t.parent) path = t.name + "/" + path;
+                Renderer r = mf.GetComponent<Renderer>();
+                Plugin.Log.LogInfo("[statue] " + path + " mesh=" + (mf.sharedMesh != null ? mf.sharedMesh.name : "-") + " mat=" + (r != null && r.sharedMaterial != null ? r.sharedMaterial.name : "-") +
+                    " at " + mf.transform.position.ToString("F1") + " d=" + d.ToString("F0") + " scale=" + mf.transform.lossyScale.ToString("F2") + " scene=" + mf.gameObject.scene.name + " active=" + mf.gameObject.activeInHierarchy +
+                    " colliders=" + mf.GetComponentsInChildren<Collider>(true).Length);
+                if (++n > 60) return;
+            }
+            Plugin.Log.LogInfo("[statue] " + n + " near " + near.ToString("F0"));
+            // The statue models as assets (not batched scene copies) and prefabs holding them.
+            foreach (Mesh m in Resources.FindObjectsOfTypeAll<Mesh>())
+                if (m != null && m.name.IndexOf("Statue", StringComparison.OrdinalIgnoreCase) >= 0) Plugin.Log.LogInfo("[statue] mesh asset " + m.name + " verts=" + m.vertexCount + " readable=" + m.isReadable);
+            foreach (GameObject g in Resources.FindObjectsOfTypeAll<GameObject>())
+                if (g != null && !g.scene.IsValid() && g.name.IndexOf("Statue", StringComparison.OrdinalIgnoreCase) >= 0) Plugin.Log.LogInfo("[statue] prefab " + g.name);
+            foreach (MeshFilter mf in Resources.FindObjectsOfTypeAll<MeshFilter>())
+                if (mf != null && mf.gameObject.scene.IsValid() && mf.gameObject.name.StartsWith("SM_Prop_Statue_Angel")) Plugin.Log.LogInfo("[statue] angel renderer " + mf.name + " mesh=" + (mf.sharedMesh != null ? mf.sharedMesh.name + " sub=" + mf.sharedMesh.subMeshCount + " verts=" + mf.sharedMesh.vertexCount : "-") + " static=" + mf.gameObject.isStatic + " at " + mf.transform.position.ToString("F1"));
+        }
+
+        // Test step crystalspots:<village>: every ring point near the village middle
+        // with the reason it is no good (or free), and how close the nearest
+        // non-terrain collider is - to pick a crystal spot by hand.
+        public static void TestSpots(string village)
+        {
+            foreach (Village v in Villages)
+            {
+                if (v.Name != village.Replace("_", " ")) continue;
+                Vector3 center;
+                if (!Middle(v, out center)) { Plugin.Log.LogWarning("Test: no middle for " + v.Name); return; }
+                int water = LayerMask.NameToLayer("Water");
+                for (int ring = 0; ring <= 6; ring++)
+                    for (int s = 0; s < (ring == 0 ? 1 : 12); s++)
+                    {
+                        float a = s * Mathf.PI * 2f / 12f;
+                        Vector3 p = center + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * ring * 4f;
+                        RaycastHit ground;
+                        string why = "free";
+                        if (!Physics.Raycast(new Vector3(p.x, center.y + 200f, p.z), Vector3.down, out ground, 500f, ~0, QueryTriggerInteraction.Ignore)) why = "no ground";
+                        else if (!ground.collider.name.StartsWith("Terrain")) why = "on " + ground.collider.name;
+                        else if (ground.normal.y < 0.9f) why = "steep";
+                        float nearest = 99f; string what = "-";
+                        if (why == "free")
+                            foreach (Collider c in Physics.OverlapSphere(ground.point + Vector3.up * 1.4f, 4f, ~0, QueryTriggerInteraction.Ignore))
+                            {
+                                if (c.name.StartsWith("Terrain") || c.GetComponentInParent<PlayerScript>() != null || c.GetComponentInParent<NPC>() != null) continue;
+                                float d = Vector3.Distance(c.ClosestPoint(ground.point + Vector3.up * 1.4f), ground.point + Vector3.up * 1.4f);
+                                if (d < nearest) { nearest = d; what = c.name; }
+                            }
+                        bool wetNear = water >= 0 && why == "free" && Physics.CheckSphere(ground.point, 8f, 1 << water, QueryTriggerInteraction.Collide);
+                        Plugin.Log.LogInfo("[crystalspot] " + v.Name + " " + p.x.ToString("F1") + "/" + p.z.ToString("F1") + " y=" + ground.point.y.ToString("F1") + " " + why + (why == "free" ? " nearest=" + nearest.ToString("F1") + " " + what + (wetNear ? " (water within 8 m)" : "") : ""));
+                    }
+                return;
+            }
+            Plugin.Log.LogWarning("Test: no village " + village);
+        }
+
         static bool DrySpot(Vector3 center, out Vector3 at, out string why)
         {
             int water = LayerMask.NameToLayer("Water");
@@ -346,7 +691,7 @@ namespace GedoniaCoop
                     // Room around it (no wall, rock, stair or tent rope) and no water close by.
                     bool crowded = false;
                     foreach (Collider c in Physics.OverlapSphere(ground.point + Vector3.up * 1.4f, 1.6f, ~0, QueryTriggerInteraction.Ignore))
-                        if (!c.name.StartsWith("Terrain") && c.GetComponentInParent<PlayerScript>() == null) { crowded = true; break; }
+                        if (!c.name.StartsWith("Terrain") && c.GetComponentInParent<PlayerScript>() == null && c.GetComponentInParent<NPC>() == null) { crowded = true; break; } // people walk away; walls, rocks and tent ropes stay
                     if (crowded || (water >= 0 && Physics.CheckSphere(ground.point, 8f, 1 << water, QueryTriggerInteraction.Collide))) continue;
                     at = ground.point;
                     why = ring * 6 + " m from the village middle " + center.ToString("F0");
@@ -405,7 +750,8 @@ namespace GedoniaCoop
             reviveAt = -1f;
             Banner = "";
             string name;
-            Vector3 to = Target(player, out name) + new Vector3(2f, 1f, 0f);
+            Vector3 to = Target(player, out name);
+            to += ReviveOffset(name);
             foreach (Village v in Villages) if (v.World == world && v.Name == name && !spots.ContainsKey(name)) pendingVillage = name;
             if (InterfaceManager.instance != null) InterfaceManager.instance.panels[8].SetActive(false);
             player.isDead = false;
@@ -464,10 +810,18 @@ namespace GedoniaCoop
     {
         public string Village;
         public RespawnStones Owner;
+        public bool Statue;
 
         // English: the label's translation (lang/de-09-extra.tsv) makes it German.
         string Text()
         {
+            if (Statue)
+            {
+                string de = Lang.German ? Translator.German(Village) : null;
+                bool b = Owner != null && Owner.IsBound(Village);
+                return Lang.T("Angel statue (" + Village + ")\n" + (b ? "You are bound here" : "Bind yourself here (respawn point)"),
+                    "Engelsstatue (" + (de ?? Village) + ")\n" + (b ? "Du bist hier gebunden" : "Hier binden (Wiederbelebungspunkt)"));
+            }
             return Owner != null && Owner.IsBound(Village)
                 ? "Respawn crystal (" + Village + ")\nYou are bound here"
                 : "Respawn crystal (" + Village + ")\nBind yourself here";

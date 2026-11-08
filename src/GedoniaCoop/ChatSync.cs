@@ -57,7 +57,7 @@ namespace GedoniaCoop
             Instance = this;
         }
 
-        public static bool Typing { get { return Instance != null && Instance.inputOpen; } }
+        public static bool Typing { get { return (Instance != null && Instance.inputOpen) || GameSkin.FieldFocused; } }
 
         // ---------- opening and closing ----------
 

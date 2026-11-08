@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.9.5). Tested with Steam build 16727998.
+Status: **playable alpha** (0.9.6). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -12,10 +12,10 @@ No game files are included; you need your own copy of the game.
 ## What is shared
 
 - **Players:** your real character model, animations, looks and gear, weapons, arrows and spells,
-  spell and combat effects (healing, elements, weapon trails), transformations (werewolf, blood demon,
+  spell and combat effects (healing, elements, weapon trails, hit sparks and blood), transformations (werewolf, blood demon,
   elemental forms), Steam name above the head, markers on world map, minimap and compass (group members), sounds
   (steps, swings, hits).
-- **Mounts:** a summoned mount and its rider are seen by everyone.
+- **Mounts:** a summoned mount and its rider are seen and heard by everyone (feet in the stirrups). Anyone can ride a mount another player has called - while you ride it, the owner's one is gone, and it stands where you get off. Next to a mount someone rides, F seats you behind the rider.
 - **Enemy shots and spells:** projectiles of enemies and followers fly on every screen (copies do no damage; hits go through the owner).
 - **Doors:** opened and closed for everyone; a door stays open while another player stands in it.
 - **Chat:** Enter opens a text chat for everyone in the session.
@@ -43,7 +43,7 @@ No game files are included; you need your own copy of the game.
 - **World:** chests, ore and herbs (taken once for all), world events, expeditions including their
   generated dungeons, travelling merchants and bards, time of day and weather, companions and summons,
   the Northern Kingdoms.
-- **Dying:** respawn crystals in the villages instead of the reload-only death screen. While other players are connected the death screen shows only the respawn countdown, and "Load game" is gone from the pause menu (loading would turn back the world, for the host everyone's).
+- **Dying:** angel statues in the villages are respawn points instead of the reload-only death screen (the village's own statue in Weystane and Ertoron, a copy built from the game's meshes elsewhere; a small gold angel marks them on minimap, compass and world map). While other players are connected the death screen shows only the respawn countdown, and "Load game" is gone from the pause menu (loading would turn back the world, for the host everyone's).
 - Pause menu does not stop the game in co-op.
 - **View distance:** an extra slider (Esc > Options > Graphics, 100-250 %) for scenery only; enemies and NPCs load as before.
 - **Look:** the co-op menu, group, trade and chat windows and the group member frames use the game's own window art and font (taken from the game at runtime; no game files in this repository).
