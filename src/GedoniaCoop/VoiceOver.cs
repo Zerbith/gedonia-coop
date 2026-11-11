@@ -102,7 +102,15 @@ namespace GedoniaCoop
             }
         }
 
-        static string FileFor(string voice, string english)
+        // speakers.tsv value for a speaker (a voice, or several separated by commas), or null.
+        internal static string VoiceList(string speaker)
+        {
+            if (!Active || string.IsNullOrEmpty(speaker)) return null;
+            string v;
+            return voices.TryGetValue(speaker, out v) ? v : null;
+        }
+
+        internal static string FileFor(string voice, string english)
         {
             if (string.IsNullOrEmpty(english)) return null;
             string f = Path.Combine(Dir, Key(voice, english) + ".ogg");

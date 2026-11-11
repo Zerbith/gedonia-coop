@@ -23,7 +23,8 @@ $refs = @(
 ) | ForEach-Object { "/r:$_" }
 
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-& $csc /nologo /nostdlib /noconfig /target:library /optimize /out:$out $refs (Get-ChildItem "$root\src\GedoniaCoop\*.cs").FullName
+# The menu credit picture (scripts\render-credit.ps1) is embedded in the dll.
+& $csc /nologo /nostdlib /noconfig /target:library /optimize /out:$out "/resource:$root\src\GedoniaCoop\res\credit.png,GedoniaCoop.credit.png" $refs (Get-ChildItem "$root\src\GedoniaCoop\*.cs").FullName
 if ($LASTEXITCODE -ne 0) { throw "csc failed" }
 
 foreach ($game in "$root\game", "$root\game2") {

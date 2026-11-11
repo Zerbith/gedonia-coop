@@ -160,6 +160,9 @@ namespace GedoniaCoop
                     if (isLoaded && data != "0" && (item.GetComponent<FighterNPCModule>() != null || item.GetComponent<CompanionNPCModule>() != null))
                     {
                         Skipped++; // a living actor: EnemySync moves it
+                        // ...but its dialogue switches (open answers) are the host's story: take those.
+                        if (!Plugin.NoFix("dialogueswitches")) ApplyDialogue(item, data, local);
+                        if (!Plugin.NoFix("storyparts")) ApplyStoryParts(item, data, local);
                         continue;
                     }
                     local[id] = data;
@@ -191,6 +194,182 @@ namespace GedoniaCoop
             }
         }
 
+        public int DialoguesApplied;
+
+        // The Dialogue part of a living NPC's entry ("1|0|1|..." in module order, modules joined
+        // by '/'): set its open answers like the host's, keep our own position, health etc.
+        void ApplyDialogue(SaveableItem item, string data, Dictionary<int, string> local)
+        {
+            DialogueNPCModule d = item.GetComponent<DialogueNPCModule>();
+            if (d == null || d.allDialogue == null || item.modules == null) return;
+            // Story NPCs: the dialogue digest sends the host's live answers; the saved entry's
+            // dialogue part can be older, and taking both flipped answers back and forth (escort test).
+            if (!Plugin.NoFix("dialoguedigest") && IsStoryNpc(item.instanceID)) return;
+            int m = Array.IndexOf(item.modules, SaveableItem.SaveModule.Dialogue);
+            string[] parts = data.Split('/');
+            if (m < 0 || parts.Length != item.modules.Length + 1) return; // part 0 is the header "1|<active>", module i is part i + 1
+            string[] bits = parts[m + 1].Split('|');
+            int changed = 0;
+            for (int i = 0; i < d.allDialogue.Length && i < bits.Length; i++)
+            {
+                if (bits[i] != "0" && bits[i] != "1") continue;
+                bool on = bits[i] == "1";
+                if (d.allDialogue[i].isActiveNow == on) continue;
+                d.allDialogue[i].isActiveNow = on;
+                changed++;
+            }
+            if (changed == 0) return;
+            // Our saved entry with the host's dialogue part.
+            string mine;
+            if (local.TryGetValue(item.instanceID, out mine))
+            {
+                string[] my = mine.Split('/');
+                if (my.Length == parts.Length) { my[m + 1] = parts[m + 1]; local[item.instanceID] = string.Join("/", my); }
+            }
+            DialoguesApplied++;
+            Plugin.Log.LogInfo(Plugin.Stamp() + " '" + item.name + "': " + changed + " answer(s) switched like the host's");
+        }
+
+        // The module list an entry of this many parts was written with: the object's own, else
+        // (story NPCs) GameManager's default list. Null if neither fits.
+        static SaveableItem.SaveModule[] Layout(SaveableItem item, int parts)
+        {
+            if (item.modules != null && item.modules.Length == parts) return item.modules;
+            if (GameManager.instance != null && GameManager.instance.defaultStoryNPCData != null)
+                foreach (GameManager.storyNpcData n in GameManager.instance.defaultStoryNPCData)
+                    if (n.saveableId == item.instanceID && n.modules != null && n.modules.Length == parts) return n.modules;
+            return null;
+        }
+
+        static SaveableItem.SaveModule[] DefaultModules(int id)
+        {
+            if (GameManager.instance != null && GameManager.instance.defaultStoryNPCData != null)
+                foreach (GameManager.storyNpcData n in GameManager.instance.defaultStoryNPCData) if (n.saveableId == id) return n.modules;
+            return null;
+        }
+
+        static string Mods(SaveableItem.SaveModule[] m)
+        {
+            if (m == null) return "-";
+            return string.Join(",", Array.ConvertAll(m, x => x.ToString()));
+        }
+
+        static bool IsStoryNpc(int id)
+        {
+            if (GameManager.instance == null || GameManager.instance.defaultStoryNPCData == null) return false;
+            foreach (GameManager.storyNpcData n in GameManager.instance.defaultStoryNPCData) if (n.saveableId == id) return true;
+            return false;
+        }
+
+        public int StoryPartsApplied;
+        readonly Dictionary<int, string[]> lastHost = new Dictionary<int, string[]>();
+        readonly HashSet<int> noLayout = new HashSet<int>();
+        static readonly System.Reflection.MethodInfo fromString = HarmonyLib.AccessTools.Method(typeof(SaveableItem), "fromString");
+
+        // The rest of a living NPC's story state in its entry: quest marks (NPC module fields 3/4),
+        // a position the story moved it to (Transform module; not for NPCs EnemySync moves), escort
+        // progress and collider. Health, death and loot stay with EnemySync. This is what a friend
+        // (or a late joiner) missed when the host's story moved an NPC, marked it or started its walk.
+        void ApplyStoryParts(SaveableItem item, string data, Dictionary<int, string> local)
+        {
+            if (item.modules == null) return;
+            string[] parts = data.Split('/');
+            // Entry = header "1|<active>" + one part per module. Story NPC entries are also written with
+            // GameManager's module list (ActivateQuestEffect, UpdateDatabaseDialogue): take the list that fits.
+            SaveableItem.SaveModule[] mods = Layout(item, parts.Length - 1);
+            if (mods == null) { if (noLayout.Add(item.instanceID)) Plugin.Log.LogInfo("[storyparts] '" + item.name + "': entry has " + parts.Length + " parts, modules " + Mods(item.modules) + " / default " + Mods(DefaultModules(item.instanceID)) + "; not read"); return; }
+            string mine;
+            string[] my = local.TryGetValue(item.instanceID, out mine) ? mine.Split('/') : null;
+            if (my != null && my.Length != parts.Length) my = null;
+            string[] prev;
+            if (lastHost.TryGetValue(item.instanceID, out prev) && prev.Length != parts.Length) prev = null;
+            lastHost[item.instanceID] = parts;
+            NPC npc = item.GetComponent<NPC>();
+            int enemyId;
+            bool movedByEnemySync = (npc != null && EnemySync.StoryRole(npc, out enemyId) != 0) || item.GetComponent<CompanionNPCModule>() != null; // companions follow their own player
+            List<string> what = new List<string>();
+            for (int i = 1; i < parts.Length; i++) // part 0: header "1|<active>"; module i - 1 is part i
+            {
+                if (prev != null && prev[i] == parts[i]) continue; // only what the host changed since its last entry
+                try
+                {
+                    switch (mods[i - 1])
+                    {
+                        case SaveableItem.SaveModule.NPC:
+                        {
+                            string[] f = parts[i].Split('|');
+                            if (npc == null || f.Length < 5 || GameManager.instance == null) break;
+                            string[] mf = my != null ? my[i].Split('|') : null;
+                            bool marks = false;
+                            if (npc.exclamationQuestMark != null && npc.exclamationQuestMark.activeSelf != (f[3] == "2")) { GameManager.instance.ActivateQuestEffectNPC(npc, true, f[3] == "2"); marks = true; }
+                            if (npc.answerQuestmark != null && npc.answerQuestmark.activeSelf != (f[4] == "2")) { GameManager.instance.ActivateQuestEffectNPC(npc, false, f[4] == "2"); marks = true; }
+                            if (!marks) break;
+                            if (my != null && mf != null && mf.Length >= 5) { mf[3] = f[3]; mf[4] = f[4]; my[i] = string.Join("|", mf); }
+                            what.Add("quest marks");
+                            break;
+                        }
+                        case SaveableItem.SaveModule.Transform:
+                        {
+                            if (movedByEnemySync || fromString == null) break;
+                            string[] t = parts[i].Split('|');
+                            if (t.Length < 2) break;
+                            Vector3 pos = (Vector3)fromString.Invoke(item, new object[] { t[0] });
+                            if (Vector3.Distance(pos, item.transform.position) < 3f) break;
+                            item.transform.position = pos;
+                            item.transform.rotation = Quaternion.Euler((Vector3)fromString.Invoke(item, new object[] { t[1] }));
+                            if (my != null) my[i] = parts[i];
+                            what.Add("position " + pos.ToString("F0"));
+                            break;
+                        }
+                        case SaveableItem.SaveModule.Escort:
+                        {
+                            EscortNPCModule e = item.GetComponent<EscortNPCModule>();
+                            string[] f = parts[i].Split('|');
+                            if (e == null || f.Length < 2) break;
+                            bool walking = f[0] == "1";
+                            int p = Convert.ToInt32(f[1]);
+                            if (e.isWalking == walking && e.currentPathP >= p) break;
+                            if (walking && !e.isWalking) e.StartWalk();
+                            else if (!walking && e.isWalking) e.isWalking = false;
+                            e.currentPathP = Mathf.Max(e.currentPathP, p);
+                            if (my != null) my[i] = parts[i];
+                            what.Add("escort " + (walking ? "walking" : "stopped") + " at point " + p);
+                            break;
+                        }
+                        case SaveableItem.SaveModule.Collider:
+                        {
+                            Collider c = item.GetComponent<Collider>();
+                            bool on = parts[i] == "1";
+                            if (c == null || c.enabled == on) break;
+                            c.enabled = on;
+                            if (my != null) my[i] = parts[i];
+                            what.Add("collider " + (on ? "on" : "off"));
+                            break;
+                        }
+                    }
+                }
+                catch (Exception ex) { Plugin.Log.LogWarning("Story part " + mods[i - 1] + " of '" + item.name + "' failed: " + ex.Message); }
+            }
+            if (what.Count == 0) return;
+            if (my != null) local[item.instanceID] = string.Join("/", my);
+            StoryPartsApplied++;
+            Plugin.Log.LogInfo(Plugin.Stamp() + " '" + item.name + "': " + string.Join(", ", what.ToArray()) + " like the host's");
+        }
+
+        // Test step npclog:<save id>: quest marks, position and saved entry of a (story) NPC.
+        public static void TestNpc(string arg)
+        {
+            int id;
+            if (!int.TryParse(arg, out id)) return;
+            SaveableItem item;
+            string entry = SaveLoadManager.instance != null && SaveLoadManager.instance.WorldDatabase.ContainsKey(id) ? SaveLoadManager.instance.WorldDatabase[id] : "-";
+            if (!LoadedById().TryGetValue(id, out item) || item == null) { Plugin.Log.LogInfo(Plugin.Stamp() + " [npclog] " + id + " not loaded; entry=" + entry); return; }
+            NPC n = item.GetComponent<NPC>();
+            Plugin.Log.LogInfo(Plugin.Stamp() + " [npclog] " + id + " '" + item.name + "' at " + item.transform.position.ToString("F1") +
+                " exclam=" + (n != null && n.exclamationQuestMark != null ? n.exclamationQuestMark.activeSelf.ToString() : "-") +
+                " answerMark=" + (n != null && n.answerQuestmark != null ? n.answerQuestmark.activeSelf.ToString() : "-") + " modules=" + Mods(item.modules) + " default=" + Mods(DefaultModules(id)) + " entry=" + entry);
+        }
+
         static Dictionary<int, SaveableItem> LoadedById()
         {
             Dictionary<int, SaveableItem> d = new Dictionary<int, SaveableItem>();
@@ -202,7 +381,7 @@ namespace GedoniaCoop
         public string Summary()
         {
             return net.IsHost ? "world baseline=" + (baseline != null ? baseline.Count : 0) + " sent=" + EntriesSent
-                : "world applied=" + EntriesApplied + " stored=" + EntriesStored + " skipped=" + Skipped + " bodiesKept=" + BodiesKept;
+                : "world applied=" + EntriesApplied + " dialogues=" + DialoguesApplied + " storyParts=" + StoryPartsApplied + " stored=" + EntriesStored + " skipped=" + Skipped + " bodiesKept=" + BodiesKept;
         }
     }
 }

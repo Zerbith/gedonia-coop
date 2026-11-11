@@ -24,15 +24,16 @@ namespace GedoniaCoop
     //    the cutscene only your own character is seen.
     public class CutsceneSync
     {
-        const byte KPending = 0, KReady = 1, KGo = 2;
+        const byte KPending = 0, KReady = 1, KGo = 2, KSkip = 3, KGoSome = 4;
+        const float SkipAfter = 30f; // ready players may start without the others after this long
 
         class Wait
         {
             public string Key, Name;
             public TimelineCutsceneController Held; // ours, waiting
             public readonly HashSet<int> Ready = new HashSet<int>();
-            public bool Go;
-            public float GoAt, SeenAt;
+            public bool Go, Skipped; // Skipped: the others started without us; F plays it here alone
+            public float GoAt, SeenAt, Since;
         }
 
         readonly Net net;
@@ -41,6 +42,7 @@ namespace GedoniaCoop
         public static CutsceneSync Instance;
         static bool releasing;
         readonly Dictionary<string, Wait> waits = new Dictionary<string, Wait>();
+        readonly Dictionary<string, float> started = new Dictionary<string, float>(); // key -> when it started here
         float nextNote, nextAnnounce, nextPlayingCheck;
         public static bool PlayingNow; // Playing, checked 4 times a second (puppets hide meanwhile)
         public int Held, Started, ReadySent;
@@ -73,7 +75,7 @@ namespace GedoniaCoop
         Wait Get(string key)
         {
             Wait w;
-            if (!waits.TryGetValue(key, out w)) { w = new Wait { Key = key, Name = key }; waits[key] = w; }
+            if (!waits.TryGetValue(key, out w)) { w = new Wait { Key = key, Name = key, Since = Time.realtimeSinceStartup }; waits[key] = w; }
             w.SeenAt = Time.realtimeSinceStartup;
             return w;
         }
@@ -116,6 +118,13 @@ namespace GedoniaCoop
         {
             foreach (Wait w in waits.Values)
             {
+                if (w.Skipped)
+                {
+                    // The others watched it already: play it here, alone.
+                    Plugin.Log.LogInfo(Plugin.Stamp() + " Cutscene '" + w.Key + "': watched alone (the others started without us)");
+                    Begin(w);
+                    return;
+                }
                 if (w.Go || w.Ready.Contains(Me)) continue;
                 w.Ready.Add(Me);
                 ReadySent++;
@@ -130,16 +139,55 @@ namespace GedoniaCoop
         // Host: everyone in the session ready -> go.
         void CheckAll(Wait w)
         {
-            if (!net.IsHost || w.Go) return;
+            if (!net.IsHost || w.Go || w.Skipped) return;
             if (!w.Ready.Contains(Me)) return;
             foreach (int p in peers()) if (!w.Ready.Contains(p)) return;
             Send(KGo, w.Key);
             Begin(w);
         }
 
+        // A ready player asked to start without the others (Space after SkipAfter s).
+        void AskSkip(Wait w)
+        {
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Cutscene '" + w.Key + "': start without the others asked");
+            if (net.IsHost) StartReady(w);
+            else Send(KSkip, w.Key);
+        }
+
+        // Host: the ready players start; the others keep it to watch alone later.
+        void StartReady(Wait w)
+        {
+            if (!net.IsHost || w.Go || w.Skipped || w.Ready.Count == 0) return;
+            List<int> ids = new List<int>(w.Ready);
+            using (MemoryStream ms = new MemoryStream())
+            using (BinaryWriter wr = new BinaryWriter(ms))
+            {
+                wr.Write(KGoSome); wr.Write(w.Key); wr.Write(ids.Count);
+                foreach (int id in ids) wr.Write(id);
+                wr.Flush();
+                net.SendMessage(Net.MsgCutscene, 0, ms.ToArray(), true);
+            }
+            GoSome(w, ids);
+        }
+
+        void GoSome(Wait w, List<int> ids)
+        {
+            List<string> names = new List<string>();
+            foreach (int id in ids) names.Add(NameOf(id));
+            if (ids.Contains(Me)) { Plugin.Log.LogInfo(Plugin.Stamp() + " Cutscene '" + w.Key + "' starts without the others for " + string.Join(", ", names.ToArray())); Begin(w); }
+            else
+            {
+                w.Skipped = true;
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Cutscene '" + w.Key + "': the others (" + string.Join(", ", names.ToArray()) + ") started without us; F plays it here");
+                nextNote = 0f;
+            }
+        }
+
         void Begin(Wait w)
         {
             w.Go = true;
+            started[w.Key] = Time.realtimeSinceStartup;
+            w.Skipped = false;
             w.GoAt = Time.realtimeSinceStartup;
             if (w.Held == null) { Plugin.Log.LogInfo(Plugin.Stamp() + " Cutscene '" + w.Key + "': everyone ready; it is not here yet (plays when it starts)"); return; }
             TimelineCutsceneController c = w.Held;
@@ -157,8 +205,18 @@ namespace GedoniaCoop
         {
             if (m.Sender == Me) return;
             byte kind; string key;
-            using (BinaryReader r = new BinaryReader(new MemoryStream(m.Payload))) { kind = r.ReadByte(); key = r.ReadString(); }
+            List<int> ids = new List<int>();
+            using (BinaryReader r = new BinaryReader(new MemoryStream(m.Payload)))
+            {
+                kind = r.ReadByte(); key = r.ReadString();
+                if (kind == KGoSome) { int n = r.ReadInt32(); for (int i = 0; i < n; i++) ids.Add(r.ReadInt32()); }
+            }
+            // A cutscene that already started here: late "waiting" news from someone who stayed behind is no new wait.
+            float startedAt;
+            if (kind == KPending && started.TryGetValue(key, out startedAt) && Time.realtimeSinceStartup - startedAt < 300f) return;
             Wait w = Get(key);
+            if (kind == KSkip) { if (w.Ready.Contains(m.Sender)) StartReady(w); return; }
+            if (kind == KGoSome) { if (!w.Go) GoSome(w, ids); return; }
             if (kind == KPending)
             {
                 Plugin.Log.LogInfo(Plugin.Stamp() + " Cutscene '" + key + "' waits at " + NameOf(m.Sender));
@@ -204,8 +262,11 @@ namespace GedoniaCoop
             if (now >= nextAnnounce)
             {
                 nextAnnounce = now + 5f;
-                foreach (Wait w in waits.Values) if (w.Held != null) Send(KPending, w.Key);
+                foreach (Wait w in waits.Values) if (w.Held != null && !w.Skipped) Send(KPending, w.Key);
             }
+            // Ready and waited long enough: Space starts it for the ready ones.
+            foreach (Wait w in new List<Wait>(waits.Values))
+                if (!w.Go && !w.Skipped && w.Ready.Contains(Me) && now - w.Since >= SkipAfter && !ChatSync.Typing && (Input.GetKeyDown(KeyCode.Space) || SkipTest)) { SkipTest = false; AskSkip(w); break; }
             HoldKey(Time.unscaledDeltaTime);
             if (now >= nextNote) { nextNote = now + 0.5f; Note(); }
         }
@@ -214,6 +275,12 @@ namespace GedoniaCoop
         {
             foreach (Wait w in waits.Values)
             {
+                if (w.Skipped)
+                {
+                    if (Plugin.Ui != null) Plugin.Ui.ShowNote(Lang.T("The others watched a cutscene without you. Hold F to watch it alone.",
+                        "Die anderen haben eine Zwischensequenz ohne dich angesehen. Halte F, um sie allein anzusehen."), 1f);
+                    return;
+                }
                 if (w.Go) continue;
                 List<string> waiting = new List<string>();
                 if (!w.Ready.Contains(Me)) waiting.Add(NameOf(Me));
@@ -223,6 +290,12 @@ namespace GedoniaCoop
                                                  : "A cutscene is about to start. Hold F when you are ready to watch it together" + (waiting.Count > 1 ? " (waiting for " + who + ")" : "");
                 string de = w.Ready.Contains(Me) ? "Zwischensequenz: du bist bereit - es fehlt noch " + who
                                                  : "Eine Zwischensequenz beginnt gleich. Halte F gedrückt, wenn du bereit bist, sie gemeinsam anzusehen" + (waiting.Count > 1 ? " (es fehlen: " + who + ")" : "");
+                if (w.Ready.Contains(Me))
+                {
+                    float left = SkipAfter - (Time.realtimeSinceStartup - w.Since);
+                    en += left > 0f ? "  (Space starts without them in " + Mathf.CeilToInt(left) + " s)" : "  (Space: start without them)";
+                    de += left > 0f ? "  (Leertaste startet ohne sie in " + Mathf.CeilToInt(left) + " s)" : "  (Leertaste: ohne sie starten)";
+                }
                 if (Plugin.Ui != null) Plugin.Ui.ShowNote(Lang.T(en, de), 1f);
                 return;
             }
@@ -332,6 +405,7 @@ namespace GedoniaCoop
         }
 
         public static void TestConfirm() { if (Instance != null) Instance.Confirm(); }
+        public static bool SkipTest; // test: press Space
         public static float Hold { get { return hold; } }
 
         [HarmonyPatch(typeof(TimelineCutsceneController), "StartCutscene")]

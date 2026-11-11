@@ -134,7 +134,7 @@ namespace GedoniaCoop
             return null;
         }
 
-        static Item Resolve(Line l)
+        internal static Item Resolve(Line l)
         {
             Item[] t = Table((ItemType)l.Type);
             if (t == null) return null;
@@ -155,14 +155,14 @@ namespace GedoniaCoop
             return Table(it.itemType) != null;
         }
 
-        static string Show(string english)
+        internal static string Show(string english)
         {
             if (!Lang.German) return english;
             string de = Translator.German(english);
             return string.IsNullOrEmpty(de) ? english : de;
         }
 
-        static Line LineOf(InventoryItem ii, int amount)
+        internal static Line LineOf(InventoryItem ii, int amount)
         {
             return new Line { Type = (int)ii.item.itemType, DbId = ii.item.databaseId, Name = ii.item.name ?? "", Data = ii.additionalData ?? "", Amount = amount };
         }
@@ -235,7 +235,36 @@ namespace GedoniaCoop
             Refresh();
         }
 
-        static void Refresh()
+        // Known issue A4: a crash between "goods moved" and the next save turned the
+        // inventory back to the save (items doubled or lost). So right after a trade
+        // (or a group chest move) the game's own autosave runs (rotating
+        // <character>_AutoSave0..2), at most every 20 s. Not during a cutscene or while dead.
+        static float lastSave = -100f;
+        static string pendingWhy;
+        // Called every frame (Plugin): a deferred save runs once its 20 s are over.
+        internal static void SaveTick()
+        {
+            if (pendingWhy != null && Time.realtimeSinceStartup - lastSave >= 20f) SaveNow(pendingWhy + " (deferred)");
+        }
+        public static int Saves;
+        internal static void SaveNow(string why)
+        {
+            PlayerScript p = PlayerScript.instance;
+            if (p == null || p.isDead || SaveLoadManager.instance == null || CutsceneSync.PlayingNow || Plugin.NoFix("tradesave")) return;
+            if (Time.realtimeSinceStartup - lastSave < 20f)
+            {
+                // Saved a moment ago: once more when the 20 s are over (SaveTick).
+                if (pendingWhy == null) Plugin.Log.LogInfo(Plugin.Stamp() + " [save] after " + why + " deferred (saved " + (Time.realtimeSinceStartup - lastSave).ToString("F0") + " s ago)");
+                pendingWhy = why;
+                return;
+            }
+            pendingWhy = null;
+            lastSave = Time.realtimeSinceStartup;
+            try { SaveLoadManager.instance.AutoSave(); Saves++; Plugin.Log.LogInfo(Plugin.Stamp() + " [save] autosave after " + why); }
+            catch (Exception e) { Plugin.Log.LogWarning("Autosave after " + why + " failed: " + e.Message); }
+        }
+
+        internal static void Refresh()
         {
             InterfaceManager im = InterfaceManager.instance;
             if (im == null) return;
@@ -533,6 +562,7 @@ namespace GedoniaCoop
                     Received++;
                     Log("delivered " + trade + ": got " + Describe(held.Theirs) + " -> " + Inventory(p));
                     Note("Trade done.", "Handel abgeschlossen.");
+                    SaveNow("trade " + trade);
                 }
                 if (cur != null && cur.Id == trade) { cur = null; Open = false; }
             }
@@ -544,6 +574,7 @@ namespace GedoniaCoop
                     escrow.Remove(trade);
                     SaveEscrow();
                     Refunded++;
+                    SaveNow("refund " + trade);
                     Log("aborted " + trade + ": gave back " + Describe(held.Ours) + " -> " + Inventory(p));
                 }
                 else Log("aborted " + trade + " (nothing taken here)");

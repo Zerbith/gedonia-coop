@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.9.6). Tested with Steam build 16727998.
+Status: **playable alpha** (0.9.11). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -17,7 +17,13 @@ No game files are included; you need your own copy of the game.
   (steps, swings, hits).
 - **Mounts:** a summoned mount and its rider are seen and heard by everyone (feet in the stirrups). Anyone can ride a mount another player has called - while you ride it, the owner's one is gone, and it stands where you get off. Next to a mount someone rides, F seats you behind the rider.
 - **Enemy shots and spells:** projectiles of enemies and followers fly on every screen (copies do no damage; hits go through the owner).
-- **Doors:** opened and closed for everyone; a door stays open while another player stands in it.
+- **Doors:** opened and closed for everyone; a door stays open while another player stands in it, and an
+  open door nobody is near for 10 s closes (also doors whose own auto-close never fires).
+- **Marks (G):** marks what is in the middle of the screen (an enemy, a chest or the ground) for everyone, with
+  name and distance; arrows at the screen edge point to marks and teammates out of view.
+- **Emotes (B):** sit down, cheers, eat, kneel - the game's own animations, also as chat commands (/sit, /cheers ...).
+- **Session statistics:** enemies defeated, damage, deaths and gold found per player (co-op menu), a summary when
+  leaving co-op.
 - **Chat:** Enter opens a text chat for everyone in the session.
 - **Enemies:** the same enemies for everyone, one owner per enemy (hand-over when players split up),
   hits from everyone count.
@@ -32,18 +38,29 @@ No game files are included; you need your own copy of the game.
 - **Trading:** co-op menu (F8 -> Trade), players within 15 m offer items and gold and both confirm. All or
   nothing: a two-phase commit with the host as coordinator and an escrow file, so a dropped connection
   neither duplicates nor loses goods. Quest items cannot be traded.
-- **Loot:** every player has their own; a body stays for you until you have looted it.
-- **Story:** the host's story counts. Dialogue answers and other story calls are run on every machine
-  in the host's order; quests are repaired if a player falls behind; late joiners catch up.
+- **Loot:** every player has their own; a body stays for you until you have looted it. Gold from chests and
+  bodies is split evenly between the players in the same world (host switch in the co-op menu). Trades and
+  group chest moves are followed by the game's autosave, so a crash cannot duplicate goods.
+- **Story:** the host's story counts. Dialogue answers and other story calls (zone triggers, usable objects,
+  items, switches, destructibles, story enemy deaths, escorts) are run on every machine in the host's order;
+  quests are repaired if a player falls behind; late joiners catch up, including the open answers and state of
+  story NPCs. Checked with an automated quest runner on two game copies (world atlas of 541 quest steps).
 - **Shared conversations:** players near an NPC can join a conversation (F) and vote on answers.
   An answer with a stat check (e.g. charisma 4) is open if one of the group meets it; gold or item
   costs (e.g. a rope) need only one of you to have them, and only one pays.
 - **Cutscenes:** watched together - each player holds the interaction key (F) until a ring fills,
-  the cutscene starts once everyone is ready. In a cutscene you see only your own character.
+  the cutscene starts once everyone is ready. After 30 s the ready players can start without someone who
+  is away (Space); that player watches it alone later with F. In a cutscene you see only your own character.
 - **World:** chests, ore and herbs (taken once for all), world events, expeditions including their
   generated dungeons, travelling merchants and bards, time of day and weather, companions and summons,
   the Northern Kingdoms.
 - **Dying:** angel statues in the villages are respawn points instead of the reload-only death screen (the village's own statue in Weystane and Ertoron, a copy built from the game's meshes elsewhere; a small gold angel marks them on minimap, compass and world map). While other players are connected the death screen shows only the respawn countdown, and "Load game" is gone from the pause menu (loading would turn back the world, for the host everyone's).
+  With a living teammate within 250 m you lie down for 30 s: the teammate holds F next to you to help you up on the
+  spot; meanwhile your camera follows them, Space respawns at once.
+- **Angel statue menu (F):** bind as respawn point, travel to the statue nearest a teammate, redistribute the four
+  base attributes for a fee (character creation rule: 8 points, 0-4 each), and a group chest shared by everyone
+  (kept by the host).
+- **Mod weapons:** a player without the same Gedonia mod sees a game weapon of the same type instead of an empty hand.
 - Pause menu does not stop the game in co-op.
 - **View distance:** an extra slider (Esc > Options > Graphics, 100-250 %) for scenery only; enemies and NPCs load as before.
 - **Look:** the co-op menu, group, trade and chat windows and the group member frames use the game's own window art and font (taken from the game at runtime; no game files in this repository).
@@ -97,7 +114,7 @@ You need your own test save named `coop-test.es3` in `backups\`.
 
 - Steam overlay invites may not open when the game is started outside Steam; the in-game friend
   list (co-op menu) works instead.
-- Story teleports affect every player.
+- Story teleports affect every player (on purpose: the group stays together).
 - Arena, Survival and Dungeon mode (separate main menu modes) are not tuned for co-op.
 - Companions of other players stay visible in a cutscene.
 

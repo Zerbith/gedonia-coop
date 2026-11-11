@@ -12,6 +12,16 @@ namespace GedoniaCoop
         public static Appearance Current;
         static int version;
 
+        // A game weapon model (< 1000) of the same weapon type as a mod weapon.
+        static int Fallback(InventoryItem ii)
+        {
+            WeaponItem mine = ii != null ? ii.item as WeaponItem : null;
+            if (mine == null || ItemsData.instance == null) return 0;
+            foreach (WeaponItem w in ItemsData.instance.weaponsDatabase)
+                if (w != null && w.weaponType == mine.weaponType && w.model > 0 && w.model < 1000) return w.model;
+            return 0;
+        }
+
         // Same order as RefreshPlayerModel's parameters.
         [HarmonyPatch(typeof(PlayerModelCustomization), "RefreshPlayerModel")]
         static class CaptureAppearance
@@ -36,6 +46,8 @@ namespace GedoniaCoop
                     Traverse t = Traverse.Create(__instance);
                     a.ShowHelmet = t.Field("showHelmet").GetValue<bool>();
                     a.ShowCloak = t.Field("showCloak").GetValue<bool>();
+                    a.FallbackMain = a.Models[6] >= 1000 ? Fallback(PlayerScript.instance.mainWeapon) : 0;
+                    a.FallbackSecondary = a.Models[7] >= 1000 ? Fallback(PlayerScript.instance.secondaryWeapon) : 0;
                     a.Version = ++version;
                     Current = a;
                     Plugin.Log.LogInfo(Plugin.Stamp() + " Captured local appearance v" + a.Version + " models=" + string.Join(",", Array.ConvertAll(a.Models, m => m.ToString())) +

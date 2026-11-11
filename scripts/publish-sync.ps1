@@ -8,6 +8,8 @@ if (-not (Test-Path $repo)) { throw "missing $repo" }
 
 $copy = @(
     @{ From = 'src\GedoniaCoop\*.cs'; To = 'src\GedoniaCoop' },
+    # The menu credit picture embedded by build.ps1 (rendered by scripts\render-credit.ps1; own artwork, no game art).
+    @{ From = 'src\GedoniaCoop\res\credit.png'; To = 'src\GedoniaCoop\res' },
     @{ From = 'scripts\*.ps1'; To = 'scripts' },
     @{ From = 'scripts\*.sh'; To = 'scripts' },
     @{ From = 'installer\*'; To = 'installer' },

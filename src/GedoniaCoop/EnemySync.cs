@@ -933,6 +933,18 @@ namespace GedoniaCoop
         // the owner shares the XP of it).
         public static bool RemoteDeath;
 
+        // StorySync: an enemy's death message. 0 = not shared (each PC has its own
+        // copy), 1 = this PC owns it, 2 = another PC owns it; id = the shared id.
+        public static int StoryRole(NPC n, out int id)
+        {
+            id = 0;
+            Enemy e;
+            if (Instance == null || n == null || !Instance.byNpc.TryGetValue(n, out e)) return 0;
+            id = e.Id;
+            if (RemoteDeath) return 2;
+            return e.Role == Role.Owner ? 1 : e.Role == Role.Replica ? 2 : 0;
+        }
+
         void KillLocally(Enemy e)
         {
             applying = true;

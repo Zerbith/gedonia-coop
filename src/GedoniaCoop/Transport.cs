@@ -29,7 +29,8 @@ namespace GedoniaCoop
     public class UdpTransport : ITransport
     {
         class Outgoing { public byte[] Packet; public IPEndPoint To; public float NextSend, GiveUp; }
-        class PeerIn { public readonly HashSet<uint> Seen = new HashSet<uint>(); public readonly Queue<uint> Order = new Queue<uint>(); }
+        class PeerIn { public readonly HashSet<uint> Seen = new HashSet<uint>(); public readonly Queue<uint> Order = new Queue<uint>(); public readonly Dictionary<int, float> BodyAt = new Dictionary<int, float>(); public readonly Dictionary<int, uint> BodySeq = new Dictionary<int, uint>(); }
+        static int Body(byte[] b) { unchecked { int h = (int)2166136261; foreach (byte x in b) h = (h ^ x) * 16777619; return h ^ b.Length; } }
 
         readonly UdpClient udp;
         readonly bool isHost;
@@ -44,7 +45,7 @@ namespace GedoniaCoop
         readonly Dictionary<string, PeerIn> peersIn = new Dictionary<string, PeerIn>();
         public static float SimulatedLoss; // test only: share of raw packets dropped on send
         readonly System.Random rng = new System.Random();
-        public int Resent, GaveUp, Duplicates, LostOnPurpose;
+        public int Resent, GaveUp, Duplicates, LostOnPurpose, SameBody;
 
         UdpTransport(UdpClient udp, bool isHost, IPEndPoint host)
         {
@@ -82,7 +83,7 @@ namespace GedoniaCoop
 
         public string Stats
         {
-            get { return "udp unacked=" + pending.Count + " resent=" + Resent + " gaveUp=" + GaveUp + " dups=" + Duplicates + (SimulatedLoss > 0f ? " lostOnPurpose=" + LostOnPurpose : ""); }
+            get { return "udp unacked=" + pending.Count + " resent=" + Resent + " gaveUp=" + GaveUp + " dups=" + Duplicates + " sameBody=" + SameBody + (SimulatedLoss > 0f ? " lostOnPurpose=" + LostOnPurpose : ""); }
         }
 
         public void Tick()
@@ -178,6 +179,19 @@ namespace GedoniaCoop
                     if (p.Order.Count > 8192) p.Seen.Remove(p.Order.Dequeue());
                     byte[] payload = new byte[d.Length - 5];
                     Buffer.BlockCopy(d, 5, payload, 0, payload.Length);
+                    // Diagnostic: the same body under a new number within 50 ms means the sender
+                    // sent it twice (the transport itself drops only repeated numbers).
+                    int h = Body(payload);
+                    float t = UnityEngine.Time.realtimeSinceStartup, last;
+                    uint lastSeq;
+                    if (p.BodyAt.TryGetValue(h, out last) && t - last < 0.05f && p.BodySeq.TryGetValue(h, out lastSeq) && lastSeq != seq)
+                    {
+                        SameBody++;
+                        if (SameBody <= 10) GedoniaCoop.Plugin.Log.LogWarning("[udpdup] same reliable body twice from " + key + ": seq " + lastSeq + " and " + seq +
+                            " (" + payload.Length + " bytes, type " + (payload.Length > 3 ? payload[3] : 0) + ", " + (int)((t - last) * 1000) + " ms apart)");
+                    }
+                    p.BodyAt[h] = t; p.BodySeq[h] = seq;
+                    if (p.BodyAt.Count > 4096) { p.BodyAt.Clear(); p.BodySeq.Clear(); }
                     into.Add(new KeyValuePair<object, byte[]>(from, payload));
                 }
                 else if (d[0] == 2 && d.Length >= 5)

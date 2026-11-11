@@ -58,7 +58,7 @@ namespace GedoniaCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "gedonia.coop";
-        public const string Version = "0.9.6";
+        public const string Version = "0.9.11";
         const float SendInterval = 0.05f;
         const float AppearanceInterval = 1f;
         const float PeerTimeout = 5f;
@@ -74,6 +74,8 @@ namespace GedoniaCoop
         WorldEventBase dumpedEvent;
         StorySync story;
         Net storyNet;
+        QuestRunner questRunner;
+        Net questRunnerNet;
         WorldStateSync worldState;
         Net worldStateNet;
         LootSync loot;
@@ -90,6 +92,9 @@ namespace GedoniaCoop
         Net tradeNet;
         ChatSync chat;
         Net chatNet;
+        PingSync pings;
+        GoldShare goldShare;
+        GroupChest groupChest;
         Net scaleNet;
         Net partyNet;
         XpSync xp;
@@ -166,6 +171,14 @@ namespace GedoniaCoop
             int n = 0;
             foreach (Puppet p in puppets.Values) if (p.Visible) n++;
             return n + "/" + puppets.Count;
+        }
+
+        // Every connected friend reports this hub world (quest runner in the Northern Kingdoms).
+        public static bool FriendsInWorld(string world)
+        {
+            if (self == null || self.puppets.Count == 0) return false;
+            foreach (Puppet p in self.puppets.Values) if (p.Latest == null || p.Latest.World != world) return false;
+            return true;
         }
 
         public static bool SameWorld(int playerId)
@@ -250,6 +263,7 @@ namespace GedoniaCoop
             ModOptions.ViewEntry = Config.Bind("Graphics", "ViewDistance", 1f, "View distance on top of the game's landscape option, 1..2.5 (1 = as in the game). Also a slider in the game's graphics options.");
             ModOptions.ViewFactor = Mathf.Clamp(ModOptions.ViewEntry.Value, 1f, ModOptions.MaxView);
             ModOptions.Init();
+            GoldShare.Entry = Config.Bind("Loot", "ShareGold", true, "Group loot: gold from chests and bodies is split evenly between the players in the same world (the host's setting counts for everyone).");
             ScaleSync.Enabled = Config.Bind("Scaling", "Enabled", true, "Stronger enemies for groups (the host's settings count for everyone).").Value;
             ScaleSync.HealthPerExtra = Mathf.Max(0f, Config.Bind("Scaling", "HealthPerExtraPlayer", 0.5f, "Enemy health added per extra group member near it (0.5 = +50 %).").Value);
             ScaleSync.DamagePerExtra = Mathf.Max(0f, Config.Bind("Scaling", "DamagePerExtraPlayer", 0.2f, "Enemy damage added per extra group member near it (0.2 = +20 %).").Value);
@@ -1068,7 +1082,7 @@ namespace GedoniaCoop
                 System.Globalization.CultureInfo.InvariantCulture, out v) ? v : fallback;
         }
 
-        static string Arg(string[] args, string name)
+        public static string Arg(string[] args, string name)
         {
             for (int i = 0; i < args.Length - 1; i++)
                 if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
@@ -1146,6 +1160,7 @@ namespace GedoniaCoop
             TryAutoload(now);
             GameSkin.Load();
             RespawnStones.Connected = net != null && puppets.Count > 0;
+            SessionStats.Tick(net, now);
             CheckHotkeys();
             TakeSteamName();
             KeepRunning();
@@ -1155,6 +1170,7 @@ namespace GedoniaCoop
             PlayerScript player = PlayerScript.instance;
             bool inWorld = player != null && SceneManager.GetActiveScene().name != "MainMenu";
             local.Scene = SceneManager.GetActiveScene().name;
+            if (inWorld) WorldLoadGuard.Tick(now); // hub world travel during loading left the new world unstreamed
             if (inWorld)
             {
                 if (inWorldSince < 0f) inWorldSince = now;
@@ -1191,14 +1207,17 @@ namespace GedoniaCoop
                     (player.rightHandActive != null && player.rightHandActive.activeSelf ? 1 : 0) |
                     (player.leftHandActive != null && player.leftHandActive.activeSelf ? 2 : 0) |
                     (player.back != null && player.back.activeSelf ? 4 : 0) |
-                    (player.arrowForBow != null && player.arrowForBow.activeSelf ? 8 : 0));
+                    (player.arrowForBow != null && player.arrowForBow.activeSelf ? 8 : 0) |
+                    (player.lute != null && player.lute.activeSelf ? 16 : 0));
                 EnsureAppearance(player, now);
                 if (dump && !dumped && now - inWorldSince > 5f) { dumped = true; LocalPlayer.Dump(player); }
                 RunTestChanges(player, now);
                 if (census && now >= nextCensus) { nextCensus = now + 5f; Census.Log(player.transform.position); }
                 TickBot(player, now);
                 TickExpAuto(player, now);
-                respawn.Tick(player, net != null && puppets.Count > 0, now);
+                respawn.Tick(player, net != null && puppets.Count > 0, now, net);
+                Emotes.Tick(true);
+                TradeSync.SaveTick();
                 TickShots(now);
             }
             else
@@ -1313,6 +1332,12 @@ namespace GedoniaCoop
                 story = new StorySync(net, () => puppets.Keys);
             }
             story.Tick(now);
+            if (questRunner == null || questRunnerNet != net)
+            {
+                questRunnerNet = net;
+                questRunner = new QuestRunner(net, () => puppets.Keys);
+            }
+            questRunner.Tick(PlayerScript.instance, now, inWorld);
             if (worldState == null || worldStateNet != net)
             {
                 worldStateNet = net;
@@ -1361,6 +1386,12 @@ namespace GedoniaCoop
                 chat = new ChatSync(net, pid => { Puppet pp; return puppets.TryGetValue(pid, out pp) && pp.Latest != null ? pp.Latest.Name : null; }, () => puppets.Keys);
             }
             chat.Tick(inWorld);
+            if (pings == null || pings.Net != net) pings = new PingSync(net);
+            pings.Tick(inWorld, now);
+            if (goldShare == null || goldShare.Net != net) goldShare = new GoldShare(net);
+            goldShare.Tick(now);
+            if (groupChest == null || groupChest.Net != net) groupChest = new GroupChest(net);
+            groupChest.Tick();
             if (xp == null || xpNet != net)
             {
                 xpNet = net;
@@ -1765,6 +1796,9 @@ namespace GedoniaCoop
                     else if (step == "formstate") Log.LogInfo(Stamp() + " [form] " + (forms != null ? forms.Describe() : "-") + " puppetsVisible=" + PuppetsVisible());
                     else if (step.StartsWith("cuthold:")) { float s = ParseFloat(step.Substring(8), 2f); Log.LogInfo(Stamp() + " Test: holding F for " + s + " s"); CutsceneSync.TestHoldUntil = Time.realtimeSinceStartup + s; }
                     else if (step == "cutready") { Log.LogInfo(Stamp() + " Test: confirming the cutscene"); CutsceneSync.TestConfirm(); }
+                    else if (step == "voicesurvey") CutsceneVoice.Survey();
+                    else if (step.StartsWith("voicesurvey:")) StartCoroutine(CutsceneVoice.SurveyScenes(step.Substring(12).Replace(" ", "_").Split(';')));
+                    else if (step == "cutskip") { Log.LogInfo(Stamp() + " Test: pressing Space (start without the others)"); CutsceneSync.SkipTest = true; }
                     else if (step == "cutstate") Log.LogInfo(Stamp() + " [cutscene] " + (cutscenes != null ? cutscenes.Describe() : "-") + " hold=" + CutsceneSync.Hold.ToString("F2") + " puppetsVisible=" + PuppetsVisible() + " playerActive=" + player.gameObject.activeSelf);
                     else if (step.StartsWith("effect:")) EffectSync.TestEffect(player, step.Substring(7));
                     else if (step == "effectstate") Log.LogInfo(Stamp() + " [effects] " + (effects != null ? effects.Describe() : "-"));
@@ -2043,6 +2077,96 @@ namespace GedoniaCoop
                         Log.LogInfo(Stamp() + " [tooltipshow] name='" + (nameT != null ? nameT.GetComponent<UILabel>().text : "") + "' text='" + tip.tooltipLabel.text.Replace("\n", " | ") + "' english source='" + tip.text.Replace("\n", " | ") + "'");
                     }
                     else if (step.StartsWith("camyaw:")) CameraMovement.instance.parentTr.rotation = Quaternion.Euler(0f, float.Parse(step.Substring(7), CultureInfo.InvariantCulture), 0f);
+                    else if (step == "gotofriend")
+                    {
+                        // Next to the first other player (1.5 m away), facing them.
+                        foreach (Puppet pf in puppets.Values)
+                        {
+                            Vector3 to = pf.Position + new Vector3(1.5f, 0.3f, 0f);
+                            player._char.enabled = false;
+                            player.transform.position = to;
+                            player._char.enabled = true;
+                            Log.LogInfo(Stamp() + " Test: went to player " + pf.Id + " at " + pf.Position.ToString("F1") + " (dead=" + (pf.Latest != null && pf.Latest.Dead) + ")");
+                            break;
+                        }
+                    }
+                    else if (step.StartsWith("stepaway:"))
+                    {
+                        // N metres east, on the ground.
+                        float n = ParseFloat(step.Substring(9), 30f);
+                        Vector3 to = player.transform.position + new Vector3(n, 0f, 0f);
+                        RaycastHit gh;
+                        if (Physics.Raycast(to + Vector3.up * 200f, Vector3.down, out gh, 400f, ~0, QueryTriggerInteraction.Ignore)) to = gh.point + Vector3.up * 0.3f;
+                        player._char.enabled = false;
+                        player.transform.position = to;
+                        player._char.enabled = true;
+                        Log.LogInfo(Stamp() + " Test: stepped " + n + " m east to " + to.ToString("F1"));
+                    }
+                    else if (step == "statuemenu")
+                    {
+                        // F at the nearest angel statue (its interaction spot).
+                        CoopCrystal best = null; float bd = 50f;
+                        foreach (CoopCrystal cc in FindObjectsOfType<CoopCrystal>())
+                        {
+                            float d = Vector3.Distance(cc.transform.position, player.transform.position);
+                            if (d < bd) { bd = d; best = cc; }
+                        }
+                        if (best != null) best.Interact();
+                        Log.LogInfo(Stamp() + " Test: statue menu " + (best != null ? "at " + best.Village + " (" + bd.ToString("F1") + " m), open=" + StatueMenu.Instance.Open : "- no statue within 50 m"));
+                    }
+                    else if (step.StartsWith("respec:"))
+                    {
+                        string[] parts = step.Substring(7).Split(';');
+                        int[] s = new int[4];
+                        for (int si = 0; si < 4 && si < parts.Length; si++) s[si] = int.Parse(parts[si]);
+                        string why;
+                        bool ok = StatueMenu.Instance.Respec(s, out why);
+                        Log.LogInfo(Stamp() + " [statuestate] respec " + step.Substring(7) + " -> " + (ok ? "done: " + StatueMenu.Last : "refused: " + why));
+                    }
+                    else if (step == "statuetravel")
+                    {
+                        string why = "no teammate";
+                        bool ok = false;
+                        foreach (Puppet pf in puppets.Values) { ok = StatueMenu.Instance.Travel(pf.Id, out why); break; }
+                        Log.LogInfo(Stamp() + " [statuestate] travel -> " + (ok ? "done: " + StatueMenu.Last : "refused: " + why));
+                    }
+                    else if (step == "statueclose") StatueMenu.Instance.Close("test");
+                    else if (step == "statuestats") StatueMenu.Instance.ShowStats();
+                    else if (step == "statuebind") { StatueMenu.Instance.BindHere(); Log.LogInfo(Stamp() + " Test: bind from the statue menu (" + StatueMenu.Last + ")"); }
+                    else if (step == "statuestate") Log.LogInfo(Stamp() + " [statuestate] open=" + StatueMenu.Instance.Open + " stats=" + player.strengthBasic + "/" + player.agilityBasic + "/" + player.intellectBasic + "/" + player.charismaBasic + " gold=" + player.gold + " level=" + player.level + " fee=" + StatueMenu.Fee + " at " + player.transform.position.ToString("F0") + " " + respawn.Summary());
+                    else if (step == "chestput")
+                    {
+                        // The first tradable stack of the inventory into the group chest.
+                        InventoryItem put = null;
+                        foreach (InventoryItem ii in player.inventory) if (ii != null && ii.item != null && TradeSync.Tradable(ii.item)) { put = ii; break; }
+                        bool ok = groupChest != null && put != null && groupChest.Put(put);
+                        Log.LogInfo(Stamp() + " [cheststate] put -> " + (ok ? GroupChest.Last : "nothing (" + (groupChest == null ? "no chest" : "no tradable item") + ")"));
+                    }
+                    else if (step.StartsWith("chesttake:"))
+                    {
+                        bool ok = groupChest != null && groupChest.Take(int.Parse(step.Substring(10)));
+                        Log.LogInfo(Stamp() + " [cheststate] take " + step.Substring(10) + " -> " + (ok ? GroupChest.Last : "nothing"));
+                    }
+                    else if (step == "chestpage") StatueMenu.Instance.ShowChest();
+                    else if (step == "cheststate") Log.LogInfo(Stamp() + " [cheststate] " + (groupChest != null ? groupChest.Summary() + " [" + groupChest.Describe() + "]" : "no chest") + " " + TradeSync.Inventory(player));
+                    else if (step.StartsWith("emote:")) { bool ok = Emotes.Play(int.Parse(step.Substring(6))); Log.LogInfo(Stamp() + " [emotestate] play " + step.Substring(6) + " -> " + (ok ? Emotes.Last : "refused")); }
+                    else if (step == "emotemenu") { Emotes.Open = !Emotes.Open; Log.LogInfo(Stamp() + " Test: emote menu " + (Emotes.Open ? "open" : "closed")); }
+                    else if (step == "statsopen") { SessionStats.Open = !SessionStats.Open; Log.LogInfo(Stamp() + " Test: stats window " + (SessionStats.Open ? "open" : "closed")); }
+                    else if (step == "statsstate") Log.LogInfo(Stamp() + " [statsstate] " + SessionStats.Summary());
+                    else if (step == "goldstate") Log.LogInfo(Stamp() + " [goldstate] gold=" + player.gold + " " + (goldShare != null ? goldShare.Summary() : "no gold share"));
+                    else if (step == "ping") { PingSync.PingTest = true; Log.LogInfo(Stamp() + " Test: pressing G (ping)"); }
+                    else if (step == "pingstate") Log.LogInfo(Stamp() + " [pingstate] " + (pings != null ? pings.Summary() + " [" + pings.Describe() + "]" : "no ping sync"));
+                    else if (step.StartsWith("turn:"))
+                    {
+                        // Turn the camera by N degrees (look somewhere else).
+                        float deg = ParseFloat(step.Substring(5), 180f);
+                        CameraMovement.instance.parentTr.rotation = Quaternion.Euler(0f, CameraMovement.instance.parentTr.eulerAngles.y + deg, 0f);
+                        Log.LogInfo(Stamp() + " Test: turned " + deg + " degrees");
+                    }
+                    else if (step == "holdhelp") { RespawnStones.HelpHeldTest = true; Log.LogInfo(Stamp() + " Test: holding F to help (hint '" + RespawnStones.HelpHint + "')"); }
+                    else if (step == "releasehelp") { RespawnStones.HelpHeldTest = false; Log.LogInfo(Stamp() + " Test: let go of F"); }
+                    else if (step == "giveup") { RespawnStones.GiveUpTest = true; Log.LogInfo(Stamp() + " Test: pressing Space while down"); }
+                    else if (step == "respawnstate") Log.LogInfo(Stamp() + " [respawnstate] dead=" + player.isDead + " health=" + player.health + "/" + player.maxHealth + " at " + player.transform.position.ToString("F1") + " hint='" + RespawnStones.HelpHint + "' progress=" + RespawnStones.HelpProgress.ToString("F2") + " spectate='" + Spectate.Watching + "' cam=" + (CameraMovement.instance != null ? CameraMovement.instance.parentTr.position.ToString("F1") : "-") + " " + respawn.Summary());
                     else if (step == "facefriend")
                     {
                         foreach (Puppet pf in puppets.Values)
@@ -2083,6 +2207,15 @@ namespace GedoniaCoop
                     else if (TradeSync.TestStep(step)) { }
                     else if (ChatSync.TestStep(step, player.transform.position)) { }
                     else if (step == "scalelog" && scale != null) Log.LogInfo(Stamp() + " [scalecheck] " + scale.Report(player.transform.position));
+                    else if (step == "worlddump") Atlas.Dump("step");
+                    else if (step.StartsWith("qclick:")) QuestRunner.TestClick(player, step.Substring(7));
+                    else if (step.StartsWith("escortfollow:")) EscortSync.TestFollow(step.Substring(13));
+                    else if (step.StartsWith("escortlog:")) EscortSync.TestLog(step.Substring(10));
+                    else if (step.StartsWith("npclog:")) WorldStateSync.TestNpc(step.Substring(7));
+                    else if (step.StartsWith("worldtour")) Atlas.StartTour(player, step.Length > 10 ? step.Substring(10) : "");
+                    else if (step == "celltour") Atlas.StartCellTour();
+                    else if (step == "worldlog") Atlas.WorldLog();
+                    else if (step.StartsWith("localfn:")) { Log.LogInfo(Stamp() + " Test: story function '" + step.Substring(8) + "' here only (behind the story sync)"); GameManager.instance.SendMessage(step.Substring(8), SendMessageOptions.DontRequireReceiver); }
                     else if (step.StartsWith("answer:")) StorySync.TestAnswer(step.Substring(7));
                     else if (step.StartsWith("unsynced:")) StorySync.TestUnsyncedQuest(step.Substring(9));
                     else if (step.StartsWith("questobj:")) StorySync.TestUnsyncedObjective(step);
@@ -2108,6 +2241,8 @@ namespace GedoniaCoop
                         " | dialogue 89849269=" + (wdb != null && wdb.TryGetValue(89849269, out d1) ? d1 : "-") +
                         " | 4022744=" + (wdb != null && wdb.TryGetValue(4022744, out d2) ? d2 : "-"));
                 }
+                Atlas.Tick(player, now);
+                EscortSync.TestTick(player, now);
                 RunLootTests(player, now);
                 if (tourStops.Count > 0 && now >= nextTourStop && loot != null)
                 {
@@ -2293,8 +2428,51 @@ namespace GedoniaCoop
 
         // Test-only (-coop-menudump 1): list the main menu's buttons (what they
         // call, their text and sprite) and take a screenshot, 8 s into the menu.
+        // Test-only (-coop-test-titledump 1): every visible NGUI widget with its screen rect,
+        // in the main menu (8 s in) and on the loading screen (panels[10], 1 s and 4 s in).
+        bool titleMenuDumped; float loadingSince = -1f; int loadingDumps;
+        void TryTitleDump(float now)
+        {
+            if (Arg(Environment.GetCommandLineArgs(), "-coop-test-titledump") == null) return;
+            if (!titleMenuDumped && SceneManager.GetActiveScene().name == "MainMenu" && now - sceneLoadedAt > 7.5f)
+            {
+                titleMenuDumped = true; WidgetDump("menuwidget"); Shot("Title_menu");
+            }
+            bool loading = InterfaceManager.instance != null && InterfaceManager.instance.panels != null && InterfaceManager.instance.panels.Length > 10
+                && InterfaceManager.instance.panels[10] != null && InterfaceManager.instance.panels[10].activeInHierarchy;
+            if (!loading) { loadingSince = -1f; return; }
+            if (loadingSince < 0f) loadingSince = now;
+            if (loadingDumps == 0 && now - loadingSince > 1f) { loadingDumps = 1; WidgetDump("loadwidget"); Shot("Title_loading1"); }
+            else if (loadingDumps == 1 && now - loadingSince > 4f) { loadingDumps = 2; Shot("Title_loading2"); }
+        }
+
+        void WidgetDump(string tag)
+        {
+            Log.LogInfo("[" + tag + "] screen " + Screen.width + "x" + Screen.height);
+            foreach (Font f in Resources.FindObjectsOfTypeAll<Font>()) Log.LogInfo("[" + tag + "] font " + f.name + " dynamic=" + f.dynamic + " names=" + (f.fontNames != null ? string.Join(",", f.fontNames) : "-"));
+            foreach (UIFont f in Resources.FindObjectsOfTypeAll<UIFont>()) Log.LogInfo("[" + tag + "] uifont " + f.name + " dynamic=" + (f.dynamicFont != null ? f.dynamicFont.name : "-"));
+            foreach (UIWidget w in Resources.FindObjectsOfTypeAll<UIWidget>())
+            {
+                if (!w.gameObject.scene.IsValid() || !w.gameObject.activeInHierarchy || !w.enabled || w.finalAlpha <= 0.01f) continue;
+                Camera cam = NGUITools.FindCameraForLayer(w.gameObject.layer);
+                string rect = "";
+                if (cam != null)
+                {
+                    Vector3[] c = w.worldCorners;
+                    Vector3 a = cam.WorldToScreenPoint(c[0]), b = cam.WorldToScreenPoint(c[2]);
+                    rect = " x " + a.x.ToString("F0") + ".." + b.x.ToString("F0") + " ytop " + (Screen.height - b.y).ToString("F0") + ".." + (Screen.height - a.y).ToString("F0");
+                }
+                string path = w.name; for (Transform t = w.transform.parent; t != null; t = t.parent) path = t.name + "/" + path;
+                UISprite s = w as UISprite; UILabel l = w as UILabel; UITexture tx = w as UITexture;
+                string what = s != null ? "sprite=" + s.spriteName : l != null ? "label font=" + (l.trueTypeFont != null ? l.trueTypeFont.name : "-") + " size=" + l.fontSize + " color=" + l.color + " effect=" + l.effectStyle + " effectColor=" + l.effectColor + " pivot=" + l.pivot + " text='" + l.text.Replace("\n", "\\n") + "'"
+                    : tx != null ? "texture=" + (tx.mainTexture != null ? tx.mainTexture.name : "-") : w.GetType().Name;
+                Log.LogInfo("[" + tag + "] " + path + " depth=" + w.depth + " size=" + w.width + "x" + w.height + rect + " " + what);
+            }
+        }
+
         void TryMenuDump(float now)
         {
+            TryTitleDump(now);
             if (menuDumped || Arg(Environment.GetCommandLineArgs(), "-coop-menudump") == null) return;
             if (SceneManager.GetActiveScene().name != "MainMenu" || now - sceneLoadedAt < 8f) return;
             menuDumped = true;

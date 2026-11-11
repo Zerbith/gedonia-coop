@@ -51,8 +51,9 @@ namespace GedoniaCoop
         PlayerModelCustomization custom;
         readonly AnimMirror mirror = new AnimMirror();
         int appliedLook = -1;
-        // Clone's counterparts of PlayerScript.rightHandActive/leftHandActive/back/arrowForBow.
-        GameObject[] holders = new GameObject[4];
+        // Clone's counterparts of PlayerScript.rightHandActive/leftHandActive/back/arrowForBow/lute
+        // (the bard's lute while a serenade plays - known issue A13).
+        GameObject[] holders = new GameObject[5];
         bool cloneFailed;
 
         int samples, matches;
@@ -198,8 +199,8 @@ namespace GedoniaCoop
                 clone.transform.localScale = src.lossyScale;
                 model = clone;
                 capsule.SetActive(false);
-                GameObject[] src4 = { player.rightHandActive, player.leftHandActive, player.back, player.arrowForBow };
-                for (int i = 0; i < 4; i++)
+                GameObject[] src4 = { player.rightHandActive, player.leftHandActive, player.back, player.arrowForBow, player.lute };
+                for (int i = 0; i < src4.Length; i++)
                 {
                     if (src4[i] == null) continue;
                     string rel = LocalPlayer.Path(src4[i].transform, player.transform);
@@ -339,8 +340,8 @@ namespace GedoniaCoop
             m[3] = Fit(m[3], male ? c.bootsMale : c.bootsFemale, "boots", notes);
             m[4] = Fit(m[4], male ? c.glovesMale : c.glovesFemale, "gloves", notes);
             m[5] = Fit(m[5], c.cloaks, "cloak", notes);
-            m[6] = FitWeapon(m[6], a.WeaponName, Math.Min(c.weaponsMain.Length, c.weaponsMainHolsered.Length), "weapon", notes);
-            m[7] = FitWeapon(m[7], a.WeaponNameSecondary, Math.Min(c.weaponsSecondary.Length, c.weaponsSecHolstered.Length), "secondary", notes);
+            m[6] = FitWeapon(m[6], a.WeaponName, a.FallbackMain, Math.Min(c.weaponsMain.Length, c.weaponsMainHolsered.Length), "weapon", notes);
+            m[7] = FitWeapon(m[7], a.WeaponNameSecondary, a.FallbackSecondary, Math.Min(c.weaponsSecondary.Length, c.weaponsSecHolstered.Length), "secondary", notes);
             return m;
         }
 
@@ -357,11 +358,17 @@ namespace GedoniaCoop
         }
 
         // Models from 1000 up are mod weapons, found by item name in this
-        // PC's mods. Without that mod the hand stays empty.
-        static int FitWeapon(int v, string name, int count, string what, List<string> notes)
+        // PC's mods. Without that mod: the sender's stand-in of the same weapon
+        // type (a game model), else an empty hand.
+        static int FitWeapon(int v, string name, int fallback, int count, string what, List<string> notes)
         {
             if (v < 1000) return Fit(v, count, what, notes);
             if (HasModWeapon(v, name)) return v;
+            if (fallback > 0 && fallback < count && !Plugin.NoFix("modweapon"))
+            {
+                notes.Add(what + " '" + name + "' (mod model " + v + ") not installed here -> stand-in model " + fallback);
+                return fallback;
+            }
             notes.Add(what + " '" + name + "' (mod model " + v + ") not installed here");
             return 0;
         }
@@ -466,7 +473,7 @@ namespace GedoniaCoop
             ApplyLook();
             if (Latest.Stealth != torchStealth) ApplyTorch();
             ApplyAnimator(now);
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < holders.Length; i++)
             {
                 bool on = (Latest.WeaponFlags & (1 << i)) != 0;
                 if (holders[i] != null && holders[i].activeSelf != on) holders[i].SetActive(on);

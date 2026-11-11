@@ -94,6 +94,13 @@ namespace GedoniaCoop
 
         // The voice-over slider also reaches the source a German clip plays on. A track that shares its
         // source with music or sounds gets those louder too.
+        // Known issue A10 (music louder too above 100 %):
+        //  - the voice track has a source of its own -> gain there as before;
+        //  - the source is shared with other tracks (music, sounds) -> the voice track
+        //    gets its own copy of the source and only that copy is boosted;
+        //  - voice and other sounds sit on the SAME track -> that source is capped at
+        //    100 % (VoiceGain.Cap): the music never gets louder, that voice not above 100 %.
+        public static int OwnSources, CappedSources;
         static void AddGain(GameObject owner, PlayableAsset asset)
         {
             PlayableDirector dir = owner != null ? owner.GetComponent<PlayableDirector>() : null;
@@ -104,11 +111,95 @@ namespace GedoniaCoop
                 {
                     if (tc.asset != asset) continue;
                     AudioSource s = dir.GetGenericBinding(track) as AudioSource;
-                    if (s == null || s.GetComponent<VoiceGain>() != null) return;
+                    if (s == null) return;
+                    if (Plugin.NoFix("voicegain")) { if (s.GetComponent<VoiceGain>() == null) s.gameObject.AddComponent<VoiceGain>(); return; }
+                    bool mixed = false;
+                    foreach (TimelineClip o in track.GetClips()) if (!IsVoiceAsset(o.asset as PlayableAsset)) mixed = true;
+                    bool shared = false;
+                    foreach (TrackAsset other in t.GetOutputTracks())
+                        if (other != track && dir.GetGenericBinding(other) as AudioSource == s) shared = true;
+                    if (mixed)
+                    {
+                        VoiceGain g = s.GetComponent<VoiceGain>() ?? s.gameObject.AddComponent<VoiceGain>();
+                        if (!g.Cap) { g.Cap = true; CappedSources++; Plugin.Log.LogInfo("[voice] source '" + s.name + "' capped at 100 % (voice and other sounds on track '" + track.name + "')"); }
+                        return;
+                    }
+                    if (shared)
+                    {
+                        // A copy of the source next to it, for this track only.
+                        GameObject go = new GameObject("CoopVoiceSource (" + track.name + ")");
+                        go.transform.SetParent(s.transform, false);
+                        AudioSource v = go.AddComponent<AudioSource>();
+                        v.outputAudioMixerGroup = s.outputAudioMixerGroup; v.volume = s.volume; v.pitch = s.pitch;
+                        v.spatialBlend = s.spatialBlend; v.priority = s.priority; v.minDistance = s.minDistance; v.maxDistance = s.maxDistance;
+                        v.rolloffMode = s.rolloffMode; v.dopplerLevel = s.dopplerLevel; v.spread = s.spread; v.reverbZoneMix = s.reverbZoneMix;
+                        v.bypassEffects = s.bypassEffects; v.bypassListenerEffects = s.bypassListenerEffects; v.ignoreListenerPause = s.ignoreListenerPause;
+                        v.playOnAwake = false;
+                        go.AddComponent<VoiceGain>();
+                        dir.SetGenericBinding(track, v);
+                        OwnSources++;
+                        Plugin.Log.LogInfo("[voice] track '" + track.name + "' gets its own source (shared '" + s.name + "' with other tracks)");
+                        return;
+                    }
+                    if (s.GetComponent<VoiceGain>() != null) return;
                     s.gameObject.AddComponent<VoiceGain>();
                     Plugin.Log.LogInfo("[voice] gain on source '" + s.name + "'");
                     return;
                 }
+        }
+
+        // Test step voicesurvey: every cutscene prefab (Resources/Cutscenes) and loaded timeline -
+        // which audio sources carry voice clips, and whether they share the source with other
+        // tracks or the track with other sounds (what A10 is about).
+        public static IEnumerator SurveyScenes(string[] scenes)
+        {
+            foreach (string sc in scenes)
+            {
+                if (string.IsNullOrEmpty(sc) || SceneManager.GetSceneByName(sc).isLoaded) continue;
+                AsyncOperation op = SceneManager.LoadSceneAsync(sc, LoadSceneMode.Additive);
+                if (op == null) { Plugin.Log.LogWarning("[voicesurvey] scene " + sc + " cannot be loaded"); continue; }
+                while (!op.isDone) yield return null;
+                Plugin.Log.LogInfo("[voicesurvey] scene " + sc + " loaded");
+            }
+            yield return null;
+            Survey();
+        }
+
+        public static void Survey()
+        {
+            List<PlayableDirector> dirs = new List<PlayableDirector>();
+            foreach (GameObject g in Resources.LoadAll<GameObject>("Cutscenes")) foreach (PlayableDirector d in g.GetComponentsInChildren<PlayableDirector>(true)) dirs.Add(d);
+            foreach (PlayableDirector d in Resources.FindObjectsOfTypeAll<PlayableDirector>()) if (d.gameObject.scene.IsValid() && !dirs.Contains(d)) dirs.Add(d);
+            int own = 0, shared = 0, mixed = 0;
+            foreach (PlayableDirector dir in dirs)
+            {
+                TimelineAsset t = dir.playableAsset as TimelineAsset;
+                if (t == null) continue;
+                foreach (TrackAsset track in t.GetOutputTracks())
+                {
+                    bool voice = false, other = false;
+                    foreach (TimelineClip c in track.GetClips()) { if (c.asset is VoiceOverClip || (c.asset is AudioPlayableAsset && IsVoiceAsset(c.asset as PlayableAsset))) voice = true; else if (c.asset is AudioPlayableAsset) other = true; }
+                    if (!voice) continue;
+                    AudioSource s = dir.GetGenericBinding(track) as AudioSource;
+                    bool sh = false;
+                    foreach (TrackAsset o in t.GetOutputTracks()) if (o != track && s != null && dir.GetGenericBinding(o) as AudioSource == s) sh = true;
+                    string kind = other ? "MIXED" : sh ? "SHARED" : "own";
+                    if (other) mixed++; else if (sh) shared++; else own++;
+                    if (kind != "own") Plugin.Log.LogInfo("[voicesurvey] " + t.name + " track '" + track.name + "' source '" + (s != null ? s.name : "-") + "': " + kind);
+                }
+            }
+            Plugin.Log.LogInfo("[voicesurvey] directors=" + dirs.Count + " voice tracks: own=" + own + " shared=" + shared + " mixed=" + mixed);
+        }
+
+        // A voice clip: a VoiceOverClip, or audio that is a German take or a game voice line.
+        static bool IsVoiceAsset(PlayableAsset a)
+        {
+            if (a is VoiceOverClip) return true;
+            AudioPlayableAsset ap = a as AudioPlayableAsset;
+            if (ap == null) return true; // not audio: no sound of its own
+            if (ap.clip == null) return true;
+            if (instance != null && (instance.IsGerman(ap.clip) || instance.For(ap.clip) != null)) return true;
+            return false;
         }
 
         bool IsGerman(AudioClip c) { return c != null && c.name.StartsWith("de_", StringComparison.Ordinal); }

@@ -168,6 +168,19 @@ namespace GedoniaCoop
                 promptStyle.fontSize = 16;
                 GameSkin.Plate(new Rect(sw / 2f - 200f, sh * 0.62f, 400f, 40f), MountSync.Hint, promptStyle);
             }
+            PingSync.Draw(scale, sw, sh, promptStyle);
+            if (RespawnStones.HelpHint.Length > 0)
+            {
+                promptStyle.fontSize = 16;
+                Rect r = new Rect(sw / 2f - 200f, sh * 0.62f + (MountSync.Hint.Length > 0 ? 46f : 0f), 400f, 40f);
+                GameSkin.Plate(r, RespawnStones.HelpHint, promptStyle);
+                if (RespawnStones.HelpProgress >= 0f)
+                {
+                    Rect bar = new Rect(r.x + 20f, r.yMax + 4f, r.width - 40f, 10f);
+                    GameSkin.Draw9(bar, "Bright", new Color(0.15f, 0.12f, 0.08f, 0.85f));
+                    GameSkin.Draw9(new Rect(bar.x, bar.y, bar.width * RespawnStones.HelpProgress, bar.height), "Bright", new Color(1f, 0.8f, 0.25f));
+                }
+            }
             if (t != null && t.InviteLobby != 0)
             {
                 promptStyle.fontSize = 16;

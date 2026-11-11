@@ -26,7 +26,7 @@ namespace GedoniaCoop
     public class DoorSync
     {
         class State { public int Version, By; public bool Open, Right; }
-        class Entry { public Door D; public int Id; public bool LastOpen, Kept; }
+        class Entry { public Door D; public int Id; public bool LastOpen, Kept, Closing; public float NearAt; }
 
         readonly Net net;
         readonly Func<IEnumerable<Puppet>> puppets;
@@ -189,6 +189,7 @@ namespace GedoniaCoop
                 // An Animator switched off by distance forgets its bools.
                 if (states.TryGetValue(e.Id, out st) && d.anim != null && d.anim.isActiveAndEnabled && d.anim.runtimeAnimatorController != null && d.anim.GetBool("isOpen") != st.Open) SetBools(d, st);
                 Hold(e, player);
+                Stuck(e, player);
             }
             if (gone != null)
                 foreach (Door d in gone)
@@ -198,6 +199,32 @@ namespace GedoniaCoop
                     Entry cur;
                     if (entries.TryGetValue(e.Id, out cur) && cur == e) entries.Remove(e.Id);
                 }
+        }
+
+        // Known issue A16: some doors' trigger never reports the player leaving
+        // (seen on MediumStr_Door3), so the game's auto-close never starts - also in
+        // single player. An open door nobody (we or a friend) has been within
+        // StuckRadius of for StuckSeconds runs the game's own close
+        // (WaitBeforeAutoClose: sound, side, collision); the change then goes to
+        // everyone like any door change.
+        const float StuckRadius = 6f, StuckSeconds = 10f;
+        static readonly MethodInfo autoClose = AccessTools.Method(typeof(Door), "WaitBeforeAutoClose");
+        public int StuckClosed;
+
+        void Stuck(Entry e, PlayerScript player)
+        {
+            Door d = e.D;
+            float now = Time.realtimeSinceStartup;
+            if (!d.isOpen || d.isLocked || !d.gameObject.activeInHierarchy || autoClose == null || Plugin.NoFix("stuckdoors")) { e.NearAt = now; e.Closing = false; return; }
+            bool near = player != null && Vector3.Distance(player.transform.position, d.transform.position) < StuckRadius;
+            if (!near) foreach (Puppet p in puppets()) if (p.Visible && Vector3.Distance(p.Position, d.transform.position) < StuckRadius) { near = true; break; }
+            if (near || e.NearAt == 0f) { e.NearAt = now; e.Closing = false; return; }
+            if (e.Closing || now - e.NearAt < StuckSeconds) return;
+            e.Closing = true;
+            heroHere.SetValue(d, false);
+            d.StartCoroutine((System.Collections.IEnumerator)autoClose.Invoke(d, null));
+            StuckClosed++;
+            Plugin.Log.LogInfo(Plugin.Stamp() + " [door] " + Show(d) + " open with nobody near for " + StuckSeconds + " s: closing it");
         }
 
         void Hold(Entry e, PlayerScript player)
@@ -267,7 +294,7 @@ namespace GedoniaCoop
 
         public string Summary()
         {
-            return "doors known=" + byDoor.Count + " changed=" + states.Count + " sent=" + Sent + " applied=" + Applied + " ignored=" + Ignored + " waited=" + Waiting + " keptOpen=" + KeptOpen;
+            return "doors known=" + byDoor.Count + " changed=" + states.Count + " sent=" + Sent + " applied=" + Applied + " ignored=" + Ignored + " waited=" + Waiting + " keptOpen=" + KeptOpen + " stuckClosed=" + StuckClosed;
         }
 
         // ---------- test helpers ----------

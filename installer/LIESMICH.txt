@@ -78,6 +78,9 @@ Im Spiel: Co-op-Knopf rechts in der oberen Leiste (oder Taste F8):
   - Status (verbunden? wie viele Spieler? deine Heimnetz-Adresse),
   - "Freunde einladen" (Steam-Host): Freundesliste mit "Einladen".
   - "Chat" (oder Taste Enter): siehe unten.
+  - "Sitzungsstatistik": Besiegte Gegner, Schaden, Tode und gefundenes Gold jedes Spielers.
+    Beim Verlassen von Co-op zeigt sie kurz deine Zusammenfassung.
+  - "Beute-Gold teilen: an/aus" (nur der Host stellt das ein, die anderen sehen es).
   - "Co-op verlassen".
   - Wer noch nicht verbunden ist, kann hier auch hosten oder beitreten.
 Steam-Einladungen kann man auch im Steam-Chat oder mit F9 annehmen (F10 = ablehnen).
@@ -88,7 +91,16 @@ stehen und ist dabei angreifbar. Neue Nachrichten erscheinen kurz unten links, m
 deiner Uhrzeit; bei offenem Feld siehst du den ganzen Verlauf dieser Sitzung. Hoechstens 200
 Zeichen pro Nachricht. Ist gerade ein Fenster des Spiels offen, geht der Chat ueber F8 auf.
 
+Markieren (Taste G): markiert fuer alle, was in der Bildmitte liegt - einen Gegner ("Gegner: ..."),
+eine Truhe oder einfach den Boden ("Hier"). Die Markierung steht 15 Sekunden mit Name und Entfernung;
+ist sie nicht im Bild, zeigt ein Pfeil am Bildschirmrand die Richtung. Mitspieler, die du gerade nicht
+siehst, zeigt ebenfalls ein blauer Pfeil am Rand.
+
+Emotes (Taste B): kleines Menue mit Hinsetzen, Prost, Essen und Knien. Im Chat gehen auch
+/sitzen, /prost, /essen und /knien. Die anderen sehen es.
+
 Jeder spielt mit seinem EIGENEN Spielstand. Die Welt und die Geschichte des HOSTS gelten.
+Dein Charakter (Stufe, Ausruestung, Gold) bleibt also deiner und kommt in jede Co-op-Runde mit.
 
 
 IM HEIMNETZ (LAN) - WINDOWS-FIREWALL
@@ -134,6 +146,9 @@ WAS GEMEINSAM IST
   schon durch war). Quest-Gegenstaende kann man nicht handeln.
 - Beute: jeder hat seine eigene. Jeder kann jede Leiche einmal selbst pluendern; sie bleibt
   bei dir liegen, bis DU sie gepluendert hast.
+  Gold aus Truhen und Leichen wird unter allen in derselben Welt gleich aufgeteilt (der Rest
+  bleibt beim Finder). Der Host kann das im Co-op-Menue ausschalten. Quest-Belohnungen,
+  Verkaufen und Handeln werden nicht geteilt.
 - Quests und Dialoge: das Ergebnis gilt fuer alle. Bei Quest-Abgabe bekommt jeder die
   volle Belohnung.
 - Gemeinsame Gespraeche: Spricht einer mit jemandem, sehen die anderen in der Naehe einen
@@ -162,7 +177,9 @@ WAS GEMEINSAM IST
 - Zwischensequenzen schaut ihr gemeinsam: Beginnt eine, erscheint bei allen oben der Hinweis
   "Eine Zwischensequenz beginnt gleich" mit einem Kreis. Wer bereit ist, haelt F gedrueckt,
   bis der Kreis voll ist (1,5 Sekunden; loslassen vorher = von vorn), dann wird er gruen.
-  Die Sequenz startet erst, wenn ALLE bereit sind (es wird ohne Zeitlimit gewartet).
+  Die Sequenz startet erst, wenn ALLE bereit sind. Fehlt nach 30 Sekunden noch jemand (z. B.
+  nicht am PC), koennen die Bereiten mit der Leertaste ohne ihn starten. Wer nicht dabei war,
+  sieht danach einen Hinweis und kann die Sequenz mit F allein ansehen.
   Solange die Frage offen ist, spricht/pluendert F nicht. In der Sequenz seht ihr nur euren
   eigenen Charakter.
 - Verwandlungen (Werwolf, Blutdaemon, Elementargestalten) sehen die anderen mit.
@@ -172,9 +189,23 @@ STERBEN IM CO-OP
 Wiederbelebungspunkte sind Engelsstatuen: In Weystane und Ertoron die Statue, die dort schon
 steht, in den anderen Orten eine gleiche Statue auf einem Sockel. Auf Minimap und Weltkarte
 zeigt sie ein kleiner goldener Engel (der Punkt, an den du gebunden bist, heller). Davor
-stehen, Kamera darauf richten und F druecken (wie beim Sprechen): dann ist man an sie gebunden.
-Stirbt man im Co-op, steht man nach 10 Sekunden an der zuletzt gebundenen Statue wieder auf
-(ohne Bindung: im naechsten schon besuchten Ort, sonst dort, wo man in die Welt gekommen ist).
+stehen, Kamera darauf richten und F druecken (wie beim Sprechen): es oeffnet sich das Menue
+der Statue (Esc schliesst):
+  - "Hier binden": diese Statue wird dein Wiederbelebungspunkt.
+  - "Zu Mitspieler reisen": du landest an der Engelsstatue, die dem Mitspieler am naechsten ist
+    (nicht, wenn er in einem Dungeon oder einer anderen Welt ist). Kostenlos.
+  - "Attribute neu verteilen": Staerke, Geschick, Intellekt und Charisma neu setzen, nach der
+    Regel der Charaktererstellung (8 Punkte, je 0 bis 4, der 4. Punkt kostet 2). Gebuehr:
+    20 Gold je Stufe, mindestens 50. Schon gelernte Faehigkeiten bleiben.
+  - "Gruppentruhe" (nur im Co-op): eine Truhe fuer alle, an jeder Statue dieselbe. Klick auf
+    einen Stapel verschiebt ihn. Der Host bewahrt sie auf (sie ist an seinen Charakter gebunden).
+Stirbt man im Co-op und ein anderer Spieler lebt in der Naehe (bis 250 m), liegt man 30 Sekunden am
+Boden: Der Mitspieler geht hin und haelt F gedrueckt (3 Sekunden, ein Balken zeigt es an),
+dann stehst du an Ort und Stelle mit halber Lebensenergie wieder auf. Waehrenddessen zeigt
+deine Kamera den Mitspieler (bis 150 m). Mit der Leertaste stehst du sofort an der Statue auf.
+Sonst steht man nach Ablauf (ohne moeglichen Helfer nach 10 Sekunden) an der zuletzt gebundenen
+Statue wieder auf (ohne Bindung: im naechsten schon besuchten Ort, sonst dort, wo man in die
+Welt gekommen ist).
 Statuen gibt es in Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, im
 Forscherlager sowie in Erynard, beim Eisenklan und bei den Soehnen des Donners.
 Solange andere Spieler verbunden sind, zeigt der Todesbildschirm nur den Countdown bis zur

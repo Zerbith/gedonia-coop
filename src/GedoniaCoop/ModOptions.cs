@@ -360,9 +360,12 @@ namespace GedoniaCoop
         public static float PeakIn, PeakOut;
         public static int Blocks;
 
+        public bool Cap; // voice and music on one track: never louder than recorded (A10)
+
         void OnAudioFilterRead(float[] data, int channels)
         {
             float g = VoiceOver.Volume, inp = 0f, outp = 0f;
+            if (Cap && g > 1f) g = 1f;
             for (int i = 0; i < data.Length; i++)
             {
                 float a = data[i] < 0f ? -data[i] : data[i];

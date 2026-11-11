@@ -80,8 +80,9 @@ namespace GedoniaCoop
         // Per character: save names rotate (autosave slots), the character's name stays.
         static string SaveKey { get { return PlayerScript.instance != null && !string.IsNullOrEmpty(PlayerScript.instance.characterName) ? "character:" + PlayerScript.instance.characterName : "?"; } }
 
-        public void Tick(PlayerScript player, bool connected, float now)
+        public void Tick(PlayerScript player, bool connected, float now, Net net)
         {
+            if (net != null) ReadRevives(player, net, now);
             string w = GameManager.instance != null ? GameManager.instance.currentLoadedWorld ?? "" : "";
             if (w != world)
             {
@@ -99,19 +100,124 @@ namespace GedoniaCoop
             PauseButtons(connected);
 
             if (invincibleUntil > 0f && now >= invincibleUntil) { Traverse.Create(player).Field("invincibility").SetValue(false); invincibleUntil = -1f; }
-            if (!connected) { reviveAt = -1f; Banner = ""; return; }
+            if (!connected) { reviveAt = -1f; Banner = ""; HelpHint = ""; HelpProgress = -1f; Spectate.Tick(player, false); return; }
+            TickHelper(player, net, now);
+            Spectate.Tick(player, player.isDead && reviveAt >= 0f);
             if (player.isDead && reviveAt < 0f)
             {
-                reviveAt = now + ReviveDelay;
-                Plugin.Log.LogInfo(Plugin.Stamp() + " Fallen in co-op; reviving in " + ReviveDelay + " s at " + TargetName(player));
+                // A living teammate in this world can come and stand us up: wait longer.
+                downed = AnyHelper(player);
+                float wait = downed ? DownTime : ReviveDelay;
+                reviveAt = now + wait;
+                downSince = now;
+                SessionStats.Died();
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Fallen in co-op; " + (downed ? "down, a teammate can stand us up; " : "") + "reviving in " + wait + " s at " + TargetName(player));
             }
             if (reviveAt >= 0f)
             {
                 if (!player.isDead) { reviveAt = -1f; Banner = ""; return; } // revived by other means
-                { string at = TargetName(player); string de = Lang.German ? Translator.German(at) : null; Banner = Lang.T("You have fallen.  Respawning in " + Mathf.CeilToInt(reviveAt - now) + " s at " + at, "Du bist gefallen.  Wiederbelebung in " + Mathf.CeilToInt(reviveAt - now) + " s bei " + (de ?? at));
-                  Countdown = Lang.T("Respawning in " + Mathf.CeilToInt(reviveAt - now) + " s\nat " + at, "Wiederbelebung in " + Mathf.CeilToInt(reviveAt - now) + " s\nbei " + (de ?? at)); }
+                // Nobody left who could come (all fallen or gone): no point waiting the long time.
+                if (downed && !AnyHelper(player) && reviveAt - now > ReviveDelay) { downed = false; reviveAt = now + ReviveDelay; Plugin.Log.LogInfo(Plugin.Stamp() + " No teammate can help any more; reviving in " + ReviveDelay + " s"); }
+                // Space: give up waiting, straight to the respawn point.
+                if (downed && now - downSince > 1f && (Input.GetKeyDown(KeyCode.Space) || GiveUpTest)) { GiveUpTest = false; reviveAt = now; Plugin.Log.LogInfo(Plugin.Stamp() + " Down: respawn now (Space)"); }
+                int secs = Mathf.CeilToInt(reviveAt - now);
+                string at = TargetName(player); string de = Lang.German ? Translator.German(at) : null;
+                if (downed)
+                {
+                    Banner = Lang.T("You are down.  A teammate can help you up (hold F).  Respawn in " + secs + " s at " + at + "  (Space: now)",
+                        "Du liegst am Boden.  Ein Mitspieler kann dir aufhelfen (F halten).  Wiederbelebung in " + secs + " s bei " + (de ?? at) + "  (Leertaste: sofort)");
+                    Countdown = Lang.T("A teammate can help you up\nRespawn in " + secs + " s at " + at + "\nSpace: respawn now",
+                        "Ein Mitspieler kann dir aufhelfen\nWiederbelebung in " + secs + " s bei " + (de ?? at) + "\nLeertaste: sofort wiederbeleben");
+                }
+                else
+                {
+                    Banner = Lang.T("You have fallen.  Respawning in " + secs + " s at " + at, "Du bist gefallen.  Wiederbelebung in " + secs + " s bei " + (de ?? at));
+                    Countdown = Lang.T("Respawning in " + secs + " s\nat " + at, "Wiederbelebung in " + secs + " s\nbei " + (de ?? at));
+                }
+                if (Spectate.Active) Countdown += Lang.T("\nWatching " + Spectate.Watching, "\nDu schaust " + Spectate.Watching + " zu");
                 ShowCountdown();
-                if (now >= reviveAt) Revive(player, now);
+                if (now >= reviveAt) Revive(player, now, null);
+            }
+        }
+
+        // ---------- teammates help a fallen player up ----------
+        //
+        // A fallen player lies down for DownTime while a living teammate is in
+        // the same world. Holding F (the game's Interact) next to the body for
+        // HelpHold seconds sends MsgRevive to that player, who stands up on the
+        // spot with half health. Otherwise the respawn at the statue follows.
+        const float DownTime = 30f, HelpRange = 2.6f, HelpHold = 3f;
+        bool downed;
+        float downSince;
+        int helping;
+        float helpSince = -1f;
+        public static string HelpHint = "";
+        public static float HelpProgress = -1f; // 0..1 while holding F, else -1
+        public static bool HelpHeldTest, GiveUpTest; // test: hold F / press Space
+        public int Helped, HelpedUp;
+
+        // A living teammate close enough to come over (250 m; a portal dungeon lies far outside the world, so
+        // someone outside it does not count).
+        const float HelperRange = 250f;
+        static bool AnyHelper(PlayerScript player)
+        {
+            foreach (Puppet p in Plugin.AllPuppets())
+                if (p.Latest != null && !p.Latest.Dead && Plugin.SameWorld(p.Id) && Vector3.Distance(new Vector3(p.Latest.X, p.Latest.Y, p.Latest.Z), player.transform.position) <= HelperRange) return true;
+            return false;
+        }
+
+        void TickHelper(PlayerScript player, Net net, float now)
+        {
+            HelpHint = "";
+            HelpProgress = -1f;
+            Puppet target = null;
+            if (!player.isDead && !player.isMounted && net != null)
+            {
+                float best = HelpRange;
+                foreach (Puppet p in Plugin.AllPuppets())
+                {
+                    if (p.Latest == null || !p.Latest.Dead || !Plugin.SameWorld(p.Id)) continue;
+                    float d = Vector3.Distance(player.transform.position, p.Position);
+                    if (d <= best) { best = d; target = p; }
+                }
+            }
+            if (target == null) { helping = 0; helpSince = -1f; return; }
+            string name = target.Latest.Name;
+            bool held = HelpHeldTest;
+            try { if (!held && vp_Input.Instance != null) held = vp_Input.GetButton("Interact"); } catch (Exception) { }
+            if (!held || helping != target.Id)
+            {
+                if (helping != 0 && helpSince >= 0f) Plugin.Log.LogInfo(Plugin.Stamp() + " Help: let go of " + name + " after " + (now - helpSince).ToString("F1") + " s");
+                helping = held ? target.Id : 0;
+                helpSince = held ? now : -1f;
+                if (held) Plugin.Log.LogInfo(Plugin.Stamp() + " Help: holding F next to " + name);
+            }
+            if (!held) { HelpHint = Lang.T("Hold F: help " + name + " up", "F halten: " + name + " aufhelfen"); return; }
+            HelpProgress = Mathf.Clamp01((now - helpSince) / HelpHold);
+            HelpHint = Lang.T("Helping " + name + " up ...", "Hilfst " + name + " auf ...");
+            if (HelpProgress < 1f) return;
+            using (MemoryStream ms = new MemoryStream())
+            using (BinaryWriter w = new BinaryWriter(ms))
+            {
+                w.Write(Plugin.LocalName);
+                w.Flush();
+                net.SendMessage(Net.MsgRevive, target.Id, ms.ToArray(), true);
+            }
+            Helped++;
+            helping = 0; helpSince = -1f; HelpHeldTest = false;
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Help: stood " + name + " (" + target.Id + ") up");
+            if (InterfaceManager.instance != null) InterfaceManager.instance.screenMessages.Add(Lang.T("You helped " + name + " up.", "Du hast " + name + " aufgeholfen."), Color.white, 2.5f);
+        }
+
+        void ReadRevives(PlayerScript player, Net net, float now)
+        {
+            foreach (Net.Message m in net.Messages)
+            {
+                if (m.Type != Net.MsgRevive || m.Sender == net.LocalId || m.Target != net.LocalId) continue;
+                string by = "?";
+                try { using (BinaryReader r = new BinaryReader(new MemoryStream(m.Payload))) by = r.ReadString(); } catch (Exception) { }
+                if (!player.isDead) { Plugin.Log.LogInfo(Plugin.Stamp() + " Help from " + by + " ignored (not down)"); continue; }
+                Revive(player, now, by);
             }
         }
 
@@ -576,6 +682,44 @@ namespace GedoniaCoop
         }
 
         public bool IsBound(string v) { return bound == v; }
+
+        // The respawn point of this world nearest to a position (where a teammate is).
+        bool NearestVillage(Vector3 near, out Village best, out Vector3 at)
+        {
+            best = default(Village); at = Vector3.zero;
+            float d = float.MaxValue;
+            bool found = false;
+            foreach (Village v in Villages)
+            {
+                Vector3 p;
+                if (v.World != world || !Spot(v, out p)) continue;
+                Vector2 flat = new Vector2(p.x - near.x, p.z - near.z);
+                if (flat.sqrMagnitude < d) { d = flat.sqrMagnitude; best = v; at = p; found = true; }
+            }
+            return found;
+        }
+
+        public string NearestStatueName(Vector3 near)
+        {
+            Village v; Vector3 at;
+            return NearestVillage(near, out v, out at) ? v.Name : "?";
+        }
+
+        // Statue menu: travel to the statue nearest to a teammate, like a revive goes
+        // (MoveToRoutine; not placed yet -> the village middle, then onto the statue).
+        public bool TravelNear(Vector3 near, out string name)
+        {
+            Village v; Vector3 at;
+            name = "";
+            PlayerScript player = PlayerScript.instance;
+            if (player == null || !NearestVillage(near, out v, out at)) return false;
+            name = v.Name;
+            if (!spots.ContainsKey(v.Name)) pendingVillage = v.Name;
+            Vector3 to = at + ReviveOffset(v.Name);
+            GameManager.instance.StartCoroutine(GameManager.instance.MoveToRoutine(to, Quaternion.identity));
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Travel to the statue of " + v.Name + " " + to.ToString("F1") + " (teammate at " + near.ToString("F0") + ")");
+            return true;
+        }
         bool IsStatue(string v) { string k; return kinds.TryGetValue(v, out k) && !k.StartsWith("crystal"); }
 
 
@@ -745,14 +889,21 @@ namespace GedoniaCoop
             return Middle(v, out p);
         }
 
-        void Revive(PlayerScript player, float now)
+        // helper != null: a teammate helped us up - stand up on the spot with half health.
+        void Revive(PlayerScript player, float now, string helper)
         {
             reviveAt = -1f;
             Banner = "";
+            downed = false;
             string name;
-            Vector3 to = Target(player, out name);
-            to += ReviveOffset(name);
-            foreach (Village v in Villages) if (v.World == world && v.Name == name && !spots.ContainsKey(name)) pendingVillage = name;
+            Vector3 to;
+            if (helper != null) { name = "the spot (helped up by " + helper + ")"; to = player.transform.position; }
+            else
+            {
+                to = Target(player, out name);
+                to += ReviveOffset(name);
+                foreach (Village v in Villages) if (v.World == world && v.Name == name && !spots.ContainsKey(name)) pendingVillage = name;
+            }
             if (InterfaceManager.instance != null) InterfaceManager.instance.panels[8].SetActive(false);
             player.isDead = false;
             if (player.anim != null)
@@ -760,15 +911,20 @@ namespace GedoniaCoop
                 player.anim.SetBool("isDead", false);
                 player.anim.Rebind(); // out of the death pose; the game sets its parameters again each frame
             }
-            player.health = player.maxHealth;
+            player.health = helper != null ? Mathf.Max(1, player.maxHealth / 2) : player.maxHealth;
             if (InterfaceManager.instance != null)
             {
-                InterfaceManager.instance.healthBar.value = 1f;
+                InterfaceManager.instance.healthBar.value = (float)player.health / Mathf.Max(1, player.maxHealth);
                 InterfaceManager.instance.healthLabel.text = player.health + "/" + player.maxHealth;
             }
             Traverse.Create(player).Field("invincibility").SetValue(true);
             invincibleUntil = now + 3f;
-            GameManager.instance.StartCoroutine(GameManager.instance.MoveToRoutine(to, Quaternion.identity));
+            if (helper != null)
+            {
+                HelpedUp++;
+                if (InterfaceManager.instance != null) InterfaceManager.instance.screenMessagesLarge.Add(Lang.T(helper + " helped you up", helper + " hat dir aufgeholfen"), Color.white, 3f);
+            }
+            else GameManager.instance.StartCoroutine(GameManager.instance.MoveToRoutine(to, Quaternion.identity));
             Revives++;
             Plugin.Log.LogInfo(Plugin.Stamp() + " Revived at " + name + " " + to.ToString("F1"));
         }
@@ -800,7 +956,7 @@ namespace GedoniaCoop
 
         public string Summary()
         {
-            return "respawn bound='" + bound + "' crystals=" + stones.Count + " binds=" + Binds + " revives=" + Revives;
+            return "respawn bound='" + bound + "' crystals=" + stones.Count + " binds=" + Binds + " revives=" + Revives + " helpedOthers=" + Helped + " helpedUp=" + HelpedUp + " down=" + downed;
         }
     }
 
@@ -819,8 +975,8 @@ namespace GedoniaCoop
             {
                 string de = Lang.German ? Translator.German(Village) : null;
                 bool b = Owner != null && Owner.IsBound(Village);
-                return Lang.T("Angel statue (" + Village + ")\n" + (b ? "You are bound here" : "Bind yourself here (respawn point)"),
-                    "Engelsstatue (" + (de ?? Village) + ")\n" + (b ? "Du bist hier gebunden" : "Hier binden (Wiederbelebungspunkt)"));
+                return Lang.T("Angel statue (" + Village + ")\n" + (b ? "You are bound here" : "Respawn point") + " - F: bind, travel, attributes",
+                    "Engelsstatue (" + (de ?? Village) + ")\n" + (b ? "Du bist hier gebunden" : "Wiederbelebungspunkt") + " - F: binden, reisen, Attribute");
             }
             return Owner != null && Owner.IsBound(Village)
                 ? "Respawn crystal (" + Village + ")\nYou are bound here"
@@ -847,7 +1003,8 @@ namespace GedoniaCoop
         public void Interact()
         {
             if (Owner == null) return;
-            Owner.Bind(Village);
+            if (Statue && !Plugin.NoFix("statuemenu")) StatueMenu.Instance.Show(Owner, Village);
+            else Owner.Bind(Village);
             if (InterfaceManager.instance != null) InterfaceManager.instance.tooltipHover.text = Text();
         }
     }

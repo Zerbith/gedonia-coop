@@ -53,6 +53,9 @@ In game: co-op button on the right of the top bar (or key F8):
   - status (connected? how many players? your home network address),
   - "Invite friends" (Steam host): friend list with "Invite",
   - "Chat" (or key Enter): see below,
+  - "Session statistics": enemies defeated, damage, deaths and gold found per player;
+    leaving co-op shows your summary for a moment,
+  - "Share loot gold: on/off" (only the host sets it, the others see it),
   - "Leave co-op",
   - if you are not connected yet, you can also host or join here.
 Steam invites can also be accepted in the Steam chat or with F9 (F10 = decline).
@@ -63,7 +66,16 @@ attacked. New messages show briefly at the bottom left with name and your local 
 field open you see the whole history of this session. At most 200 characters per message. If one
 of the game's windows is open, open the chat through F8.
 
+Mark (key G): marks for everyone what is in the middle of the screen - an enemy ("Enemy: ..."),
+a chest or just the ground ("Here"). The mark stays 15 seconds with name and distance; when it is
+not in view, an arrow at the screen edge points the way. Teammates you cannot see get a blue
+arrow at the edge too.
+
+Emotes (key B): small menu with sit down, cheers, eat and kneel. In the chat /sit, /cheers,
+/eat and /kneel work too. The others see it.
+
 Everyone plays with their OWN save. The HOST's world and story count.
+So your character (level, gear, gold) stays yours and comes along into every co-op game.
 
 
 HOME NETWORK (LAN) - WINDOWS FIREWALL
@@ -107,6 +119,9 @@ WHAT IS SHARED
   through). Quest items cannot be traded.
 - Loot: everyone has their own. Everyone can loot every body once; it stays for you until
   YOU have looted it.
+  Gold from chests and bodies is split evenly between everyone in the same world (the rest
+  stays with the finder). The host can switch that off in the co-op menu. Quest rewards,
+  selling and trading are not split.
 - Quests and dialogues: the result counts for everyone. When a quest is handed in, everyone
   gets the full reward.
 - Shared conversations: when someone talks to an NPC, the others nearby get a note. Walk to
@@ -133,8 +148,10 @@ WHAT IS SHARED
 - The pause menu (Esc) does not pause the game in co-op - the world goes on for the others.
 - Cutscenes are watched together: when one begins, everyone sees "A cutscene is about to
   start" at the top with a ring. When ready, hold F until the ring is full (1.5 seconds;
-  letting go earlier starts over) - it turns green. It starts only once ALL are ready (there
-  is no time limit). While the question is open, F doesn't talk or loot. In the cutscene
+  letting go earlier starts over) - it turns green. It starts only once ALL are ready. If
+  someone is still missing after 30 seconds (e.g. away from the PC), the ready ones can start
+  without them with Space; whoever missed it gets a note and can watch it alone with F.
+  While the question is open, F doesn't talk or loot. In the cutscene
   you see only your own character.
 - Transformations (werewolf, blood demon, elemental forms) are seen by the others.
 
@@ -144,9 +161,21 @@ DYING IN CO-OP
 Respawn points are angel statues: in Weystane and Ertoron the statue that already stands there,
 elsewhere the same statue on a plinth. A small gold angel marks them on the minimap and the world
 map (the one you are bound to is brighter). Stand in front of one, look at it and press F (like
-talking to someone) to bind yourself to it. If you die in co-op, you get up again at the last
-statue you bound to after 10 seconds (not bound: the nearest place you have been to, else where
-you entered the world).
+talking to someone): the statue's menu opens (Esc closes):
+  - "Bind yourself here": this statue becomes your respawn point.
+  - "Travel to a teammate": you arrive at the angel statue nearest to that teammate (not while
+    they are in a dungeon or another world). Free.
+  - "Redistribute attributes": set strength, agility, intellect and charisma again by the
+    character creation rule (8 points, each 0 to 4, the 4th point costs 2). Fee: 20 gold per
+    level, at least 50. Abilities you already learned stay.
+  - "Group chest" (co-op only): one chest for everyone, the same at every statue. Clicking a
+    stack moves it. The host keeps it (it belongs to the host's character).
+If you die in co-op while another player is alive nearby (up to 250 m), you lie down for 30
+seconds: the teammate walks over and holds F (3 seconds, a bar shows it), and you get up on the
+spot with half health. Meanwhile your camera shows that teammate (up to 150 m). Space gets you
+up at the statue at once. Otherwise you get up when the time is over (after 10 seconds when
+nobody could help) at the last statue you bound to (not bound: the nearest place you have been
+to, else where you entered the world).
 Statues: Weystane, Steepport, Stawford, Fayreach, Korram, Ertoron, the explorers' camp,
 Erynard, the Ironclad clan and the Sons of Thunder.
 While other players are connected, the death screen shows only the countdown (no "Load game",

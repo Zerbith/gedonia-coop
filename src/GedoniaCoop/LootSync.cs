@@ -76,6 +76,30 @@ namespace GedoniaCoop
 
         public int IdOf(Container c) { int id; return c != null && idOf.TryGetValue(c, out id) ? id : 0; }
 
+        // Known issue A17: chests in generated dungeons (DunGen tiles, built at
+        // runtime with the same seed on every PC - see ExpeditionSync) were not in
+        // any loaded scene, so they had no id and stayed local. Named like the
+        // dungeon enemies: by their place below the dungeon's root.
+        public int DungeonContainers;
+        void IndexDungeons()
+        {
+            if (Plugin.NoFix("dungeonchests")) return;
+            foreach (DunGen.Dungeon d in UnityEngine.Object.FindObjectsOfType<DunGen.Dungeon>())
+            {
+                Vector3 r = d.transform.position;
+                string root = "dungen/" + Mathf.RoundToInt(r.x) + "," + Mathf.RoundToInt(r.y) + "," + Mathf.RoundToInt(r.z);
+                foreach (Container c in d.GetComponentsInChildren<Container>(true))
+                {
+                    if (c == null || idOf.ContainsKey(c)) continue;
+                    int id = WorldIds.Under(c.transform, d.transform, root);
+                    idOf[c] = id;
+                    byId[id] = c;
+                    DungeonContainers++;
+                    Plugin.Log.LogInfo("Dungeon container '" + c.name + "' gets id " + id + " (" + c.loot.Count + " items)");
+                }
+            }
+        }
+
         // ---------- opening: ask the host for the lock ----------
 
         [HarmonyPatch(typeof(Container), "Interact")]
@@ -362,7 +386,7 @@ namespace GedoniaCoop
             }
             SendRequest(now);
             WatchLock(now);
-            if (now >= nextScan) { nextScan = now + 2f; ApplyWaiting(now); }
+            if (now >= nextScan) { nextScan = now + 2f; IndexDungeons(); ApplyWaiting(now); }
         }
 
         public string Summary()

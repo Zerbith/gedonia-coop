@@ -58,6 +58,9 @@ namespace GedoniaCoop
         public int Signature;
         // The sender's "show helmet" / "show cloak" options (PlayerPrefs on its PC).
         public bool ShowHelmet = true, ShowCloak = true;
+        // For mod weapons (model >= 1000): a game model of the same weapon type, shown
+        // where that mod is not installed (known issue A15: the hand stayed empty).
+        public int FallbackMain, FallbackSecondary;
     }
 
     // Co-op protocol on top of any ITransport. The host remembers every peer
@@ -66,7 +69,7 @@ namespace GedoniaCoop
     public class Net : IDisposable
     {
         const ushort Magic = 0x4743; // "GC"
-        const byte Version = 20;
+        const byte Version = 23;
         public const byte ProtocolVersion = Version;
         const byte MsgState = 1;
         const byte MsgAppearance = 2;
@@ -80,7 +83,7 @@ namespace GedoniaCoop
             MsgWorldClock = 25, MsgTimeSkip = 26, MsgActorRoster = 27,
             MsgEventState = 28, MsgEventSpawn = 29, MsgEventObjective = 30, MsgEventComplete = 31, MsgEventUse = 32,
             MsgWorldState = 33, MsgProjectile = 34, MsgExpeditions = 35, MsgExpeditionStart = 36, MsgEventObject = 37, MsgEventObjSpawn = 38, MsgWorldStateRequest = 39, MsgTravellers = 40, MsgSounds = 41, MsgDialogue = 42, MsgXp = 43, MsgEffects = 44, MsgCutscene = 45, MsgForm = 46,
-            MsgParty = 47, MsgScale = 48, MsgTrade = 49, MsgChat = 50, MsgMount = 51, MsgDoor = 52, MsgSeat = 53;
+            MsgParty = 47, MsgScale = 48, MsgTrade = 49, MsgChat = 50, MsgMount = 51, MsgDoor = 52, MsgSeat = 53, MsgRevive = 54, MsgPing = 55, MsgGold = 56, MsgChest = 57, MsgStats = 58, MsgQuestRun = 59, MsgDialogueDigest = 60;
 
         public struct Message
         {
@@ -170,10 +173,22 @@ namespace GedoniaCoop
                 Received++;
                 if (transport.IsHost)
                 {
-                    peers[sender] = pkt.Key;
+                    // One endpoint is one player: a packet sent before the friend knew its id came as
+                    // sender 0 and stayed a second peer, so the host sent everything twice (the
+                    // "messages seen twice on the friend" of the quest runner). Id 0 is never a peer,
+                    // and a new id at a known endpoint replaces the old one.
+                    object was;
+                    if (sender != 0 && (!peers.TryGetValue(sender, out was) || !Equals(was, pkt.Key)))
+                    {
+                        List<int> stale = new List<int>();
+                        foreach (KeyValuePair<int, object> p in peers) if (p.Key != sender && Equals(p.Value, pkt.Key)) stale.Add(p.Key);
+                        foreach (int s in stale) peers.Remove(s);
+                        peers[sender] = pkt.Key;
+                        Plugin.Log.LogInfo("[net] peer " + sender + " at " + pkt.Key + (was != null ? " (was " + was + ")" : "") + (stale.Count > 0 ? " (replaces id " + string.Join(",", stale.ConvertAll(x => x.ToString()).ToArray()) + ")" : "") + "; peers now " + peers.Count);
+                    }
                     // Relay to every other peer so clients see each other.
                     foreach (KeyValuePair<int, object> p in peers)
-                        if (p.Key != sender) SendRaw(pkt.Value, p.Value, reliable);
+                        if (p.Key != sender && !Equals(p.Value, pkt.Key)) SendRaw(pkt.Value, p.Value, reliable);
                 }
             }
         }
@@ -228,7 +243,7 @@ namespace GedoniaCoop
                 w.Write((byte)Math.Min(a.AdditionalData.Count, 255));
                 for (int i = 0; i < a.AdditionalData.Count && i < 255; i++) w.Write(a.AdditionalData[i] ?? "");
                 w.Write(a.WeaponName ?? ""); w.Write(a.WeaponNameSecondary ?? "");
-                w.Write(a.Signature); w.Write(a.ShowHelmet); w.Write(a.ShowCloak);
+                w.Write(a.Signature); w.Write(a.ShowHelmet); w.Write(a.ShowCloak); w.Write(a.FallbackMain); w.Write(a.FallbackSecondary);
                 w.Flush();
                 return ms.ToArray();
             }
@@ -286,7 +301,7 @@ namespace GedoniaCoop
                         int n = r.ReadByte();
                         for (int i = 0; i < n; i++) a.AdditionalData.Add(r.ReadString());
                         a.WeaponName = r.ReadString(); a.WeaponNameSecondary = r.ReadString();
-                        a.Signature = r.ReadInt32(); a.ShowHelmet = r.ReadBoolean(); a.ShowCloak = r.ReadBoolean();
+                        a.Signature = r.ReadInt32(); a.ShowHelmet = r.ReadBoolean(); a.ShowCloak = r.ReadBoolean(); a.FallbackMain = r.ReadInt32(); a.FallbackSecondary = r.ReadInt32();
                         Appearances.Add(a);
                         sender = a.Id;
                         return true;

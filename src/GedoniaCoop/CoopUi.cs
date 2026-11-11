@@ -16,6 +16,9 @@ namespace GedoniaCoop
         readonly Plugin plugin;
         bool menuBuilt;
         GameObject topButton;
+        bool loadingCreditBuilt;
+        UILabel versionLabel;
+        string gameVersionText;
         readonly List<UILabel> ownLabels = new List<UILabel>();
         readonly List<KeyValuePair<string, string>> ownTexts = new List<KeyValuePair<string, string>>();
         float sceneSince = -1f;
@@ -37,9 +40,12 @@ namespace GedoniaCoop
         public void Tick(float now)
         {
             string s = SceneManager.GetActiveScene().name;
-            if (s != sceneName) { sceneName = s; sceneSince = now; menuBuilt = false; topButton = null; ownLabels.Clear(); ownTexts.Clear(); JoinOpen = MenuOpen = HostOpen = false; }
+            if (s != sceneName) { sceneName = s; sceneSince = now; menuBuilt = false; topButton = null; loadingCreditBuilt = false; versionLabel = null; credits.Clear(); ownLabels.Clear(); ownTexts.Clear(); JoinOpen = MenuOpen = HostOpen = false; }
             if (s == "MainMenu" && !menuBuilt && now - sceneSince > 1f) BuildMenu();
             if (s != "MainMenu" && topButton == null && now - sceneSince > 3f) BuildTopButton();
+            if (s != "MainMenu" && !loadingCreditBuilt) BuildLoadingCredit();
+            if (credits.Count > 0) PlaceCredits();
+            StatueMenu.Instance.Tick();
             if (Note.Length > 0 && now > noteUntil) Note = "";
             if (JoinOpen && now >= nextFriendsRefresh)
             {
@@ -78,8 +84,8 @@ namespace GedoniaCoop
         }
 
         // Windows of other features opened from the co-op menu.
-        static bool ExtraOpen { get { return (PartySync.Instance != null && PartySync.Instance.Open) || (TradeSync.Instance != null && TradeSync.Instance.Open); } }
-        static void CloseExtra() { if (PartySync.Instance != null) PartySync.Instance.Open = false; if (TradeSync.Instance != null) TradeSync.Instance.Open = false; }
+        static bool ExtraOpen { get { return (PartySync.Instance != null && PartySync.Instance.Open) || (TradeSync.Instance != null && TradeSync.Instance.Open) || StatueMenu.Instance.Open || Emotes.Open || SessionStats.Open; } }
+        static void CloseExtra() { if (PartySync.Instance != null) PartySync.Instance.Open = false; if (TradeSync.Instance != null) TradeSync.Instance.Open = false; StatueMenu.Instance.Close("Esc"); Emotes.Open = false; SessionStats.Open = false; }
 
         public static bool BlocksGame;
         bool savedVisible;
@@ -146,6 +152,130 @@ namespace GedoniaCoop
                 Clone(mods, "CoopHost", -step * 2f, "Host co-op", "Co-op hosten", "OnMenuCoopHost");
             }
             Plugin.Log.LogInfo("Main menu: co-op and language buttons added (" + (english != null) + "/" + (mods != null) + ")");
+            // Credit under the title logo, mod version next to the game's.
+            Transform menu = mods != null ? mods.transform.root : null;
+            UILabel copyright = null, version = null;
+            if (menu != null)
+                foreach (UILabel l in menu.GetComponentsInChildren<UILabel>(true))
+                {
+                    if (l.text.StartsWith("Version")) version = l;
+                    else if (l.text.StartsWith("(c)")) copyright = l;
+                }
+            UITexture logo = FindLogo(menu, true);
+            if (logo != null)
+            {
+                AddCredit(logo);
+                // The menu's own (hidden) loading panel, shown while a save loads.
+                foreach (UITexture t in menu.GetComponentsInChildren<UITexture>(true))
+                    if (t != logo && t.mainTexture != null && t.mainTexture.name == "LogoPng3") AddCredit(t);
+            }
+            else Plugin.Log.LogWarning("Main menu: no title logo for the mod credit");
+            if (version != null) { versionLabel = version; gameVersionText = version.text; ShowModVersion(); }
+            else Plugin.Log.LogWarning("Main menu: no game version label");
+        }
+
+        // The game's title logo (texture LogoPng3) under a root. The main menu
+        // has a second, hidden one (its own loading panel): the visible one wins.
+        static UITexture FindLogo(Transform root, bool visibleOnly)
+        {
+            if (root == null) return null;
+            foreach (UITexture t in root.GetComponentsInChildren<UITexture>(true))
+                if (t.mainTexture != null && t.mainTexture.name == "LogoPng3" && (!visibleOnly || t.gameObject.activeInHierarchy)) return t;
+            return null;
+        }
+
+        // "Coop Mod by Zerbith" as a picture in the logo's own look (gold gradient,
+        // dark rim, warm glow; scripts\render-credit.ps1, embedded in the dll),
+        // centred under the lettering. The logo picture is larger than its
+        // lettering: the letters end at ~69 % of its height.
+        class Credit { public UITexture Pic; public UITexture Logo; public Vector3 Placed = new Vector3(float.NaN, 0f, 0f); public int Logs; }
+        readonly List<Credit> credits = new List<Credit>();
+        const float CreditBelow = 0.68f, CreditWidth = 0.50f; // of the logo picture's height / width
+        static Texture2D creditTex;
+
+        static Texture2D CreditTexture()
+        {
+            if (creditTex != null) return creditTex;
+            using (System.IO.Stream s = typeof(CoopUi).Assembly.GetManifestResourceStream("GedoniaCoop.credit.png"))
+            {
+                if (s == null) { Plugin.Log.LogWarning("Mod credit picture missing in the dll"); return null; }
+                byte[] data = new byte[s.Length];
+                int got = 0;
+                while (got < data.Length) { int n = s.Read(data, got, data.Length - got); if (n <= 0) break; got += n; }
+                Texture2D t = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+                t.name = "CoopCredit";
+                t.LoadImage(data);
+                t.wrapMode = TextureWrapMode.Clamp;
+                t.filterMode = FilterMode.Trilinear;
+                t.anisoLevel = 4;
+                t.hideFlags = HideFlags.DontUnloadUnusedAsset;
+                creditTex = t;
+            }
+            return creditTex;
+        }
+
+        // Every frame while the logo shows: the logo is laid out (anchors, tweens,
+        // a panel that is still hidden) after the credit is made.
+        void PlaceCredits()
+        {
+            for (int i = credits.Count - 1; i >= 0; i--)
+            {
+                Credit cr = credits[i];
+                if (cr.Pic == null || cr.Logo == null) { credits.RemoveAt(i); continue; }
+                if (!cr.Logo.gameObject.activeInHierarchy) continue;
+                Vector3[] c = cr.Logo.worldCorners; // bottom-left, top-left, top-right, bottom-right
+                Vector3 p = Vector3.Lerp((c[1] + c[2]) / 2f, (c[0] + c[3]) / 2f, CreditBelow);
+                Transform t = cr.Pic.transform;
+                if ((t.position - p).sqrMagnitude > 1e-10f) { t.position = p; t.localPosition = new Vector3(t.localPosition.x, t.localPosition.y, 0f); }
+                int w = Mathf.Max(2, Mathf.RoundToInt(cr.Logo.width * CreditWidth));
+                int h = Mathf.Max(2, Mathf.RoundToInt(w * (float)cr.Pic.mainTexture.height / cr.Pic.mainTexture.width));
+                if (cr.Pic.width != w || cr.Pic.height != h) { cr.Pic.width = w; cr.Pic.height = h; }
+                if (cr.Logs < 4 && (float.IsNaN(cr.Placed.x) || (cr.Placed - t.localPosition).sqrMagnitude > 1f))
+                {
+                    cr.Placed = t.localPosition; cr.Logs++;
+                    Plugin.Log.LogInfo("Mod credit under '" + cr.Logo.name + "' placed at " + t.localPosition + " size " + w + "x" + h);
+                }
+            }
+        }
+
+        // A child of the logo, so it shows, fades and scales with it; sized in the
+        // logo's own units (half its picture width) and placed by PlaceCredits.
+        void AddCredit(UITexture logo)
+        {
+            Texture2D tex = CreditTexture();
+            if (tex == null) return;
+            GameObject g = new GameObject("CoopCredit");
+            g.layer = logo.gameObject.layer;
+            g.transform.parent = logo.transform;
+            g.transform.localRotation = Quaternion.identity;
+            g.transform.localScale = Vector3.one;
+            g.transform.localPosition = Vector3.zero;
+            UITexture pic = g.AddComponent<UITexture>();
+            pic.shader = logo.shader != null ? logo.shader : Shader.Find("Unlit/Transparent Colored");
+            pic.mainTexture = tex;
+            pic.pivot = UIWidget.Pivot.Top;
+            pic.depth = logo.depth + 1;
+            credits.Add(new Credit { Pic = pic, Logo = logo });
+            Plugin.Log.LogInfo("Mod credit added under the title logo '" + logo.name + "' (" + logo.width + "x" + logo.height + "), picture " + tex.width + "x" + tex.height + " shader " + (pic.shader != null ? pic.shader.name : "-"));
+            PlaceCredits();
+        }
+
+        void ShowModVersion()
+        {
+            if (versionLabel == null) return;
+            versionLabel.text = gameVersionText + Lang.T(" / Co-op mod ", " / Co-op-Mod ") + Plugin.Version;
+        }
+
+        // The loading screen (InterfaceManager.panels[10]) of the game scene
+        // has its own smaller title logo: the same credit under it.
+        void BuildLoadingCredit()
+        {
+            InterfaceManager im = InterfaceManager.instance;
+            if (im == null || im.panels == null || im.panels.Length <= 10 || im.panels[10] == null) return;
+            loadingCreditBuilt = true;
+            UITexture logo = FindLogo(im.panels[10].transform, false);
+            if (logo == null) { Plugin.Log.LogWarning("Loading screen: no title logo for the mod credit"); return; }
+            AddCredit(logo);
         }
 
         void BuildTopButton()
@@ -218,6 +348,7 @@ namespace GedoniaCoop
         {
             for (int i = 0; i < ownLabels.Count; i++)
                 if (ownLabels[i] != null) ownLabels[i].text = Lang.T(ownTexts[i].Key, ownTexts[i].Value);
+            ShowModVersion();
         }
 
         // Where the upper bar's co-op button is on screen (GUI coordinates).
@@ -271,6 +402,24 @@ namespace GedoniaCoop
                     Rect a = party.PanelRect;
                     panelOnScreen = new Rect(a.x * scale, a.y * scale, a.width * scale, a.height * scale);
                 }
+            }
+            if (SessionStats.Open && plugin.CoopActive)
+            {
+                SessionStats.Draw(sw, panel);
+                Rect a = SessionStats.PanelRect;
+                panelOnScreen = new Rect(a.x * scale, a.y * scale, a.width * scale, a.height * scale);
+            }
+            if (Emotes.Open && PlayerScript.instance != null)
+            {
+                Emotes.Draw(sw, Screen.height / scale, panel);
+                Rect a = Emotes.PanelRect;
+                panelOnScreen = new Rect(a.x * scale, a.y * scale, a.width * scale, a.height * scale);
+            }
+            if (StatueMenu.Instance.Open && PlayerScript.instance != null)
+            {
+                StatueMenu.Instance.DrawPanel(sw, Screen.height / scale, panel);
+                Rect a = StatueMenu.Instance.PanelRect;
+                panelOnScreen = new Rect(a.x * scale, a.y * scale, a.width * scale, a.height * scale);
             }
             TradeSync trade = TradeSync.Instance;
             if (trade != null && trade.Open)
@@ -352,7 +501,7 @@ namespace GedoniaCoop
             Vector2 at = TopButtonOnScreen() / scale;
             // Height from the content (status lines + one row per button).
             int buttons = 1;
-            if (plugin.CoopActive) buttons += (plugin.CoopCanInvite ? 1 : 0) + (PartySync.Instance != null ? 1 : 0) + (TradeSync.Instance != null ? 1 : 0) + (ChatSync.Instance != null ? 1 : 0) + 1;
+            if (plugin.CoopActive) buttons += (plugin.CoopCanInvite ? 1 : 0) + (PartySync.Instance != null ? 1 : 0) + (TradeSync.Instance != null ? 1 : 0) + (ChatSync.Instance != null ? 1 : 0) + (GoldShare.Instance != null ? 1 : 0) + 2;
             else buttons += 3;
             float w = 300f;
             float h = 44f + GameSkin.LabelStyle.CalcHeight(new GUIContent(plugin.CoopStatus()), w - 28f) + buttons * 34f + 10f;
@@ -377,6 +526,14 @@ namespace GedoniaCoop
                     if (GameSkin.LButton(label)) { MenuOpen = false; TradeSync.Instance.Open = true; }
                 }
                 if (ChatSync.Instance != null && GameSkin.LButton(Lang.T("Chat (Enter)", "Chat (Enter)"))) { MenuOpen = false; ChatSync.Instance.RequestOpen(); }
+                if (GameSkin.LButton(Lang.T("Session statistics", "Sitzungsstatistik"))) { MenuOpen = false; SessionStats.Open = true; }
+                if (GoldShare.Instance != null)
+                {
+                    // The host decides; the others see the rule.
+                    string state = GoldShare.Active ? Lang.T("on", "an") : Lang.T("off", "aus");
+                    if (GoldShare.Instance.Net.IsHost) { if (GameSkin.LButton(Lang.T("Share loot gold: ", "Beute-Gold teilen: ") + state)) GoldShare.Instance.Toggle(); }
+                    else GameSkin.LLabel(Lang.T("Loot gold is shared: ", "Beute-Gold wird geteilt: ") + state + Lang.T(" (host)", " (Host)"));
+                }
                 if (GameSkin.LButton(Lang.T("Leave co-op", "Co-op verlassen"))) { MenuOpen = false; plugin.CoopLeave(); }
             }
             else

@@ -128,7 +128,7 @@ namespace GedoniaCoop
         {
             string clean = Clean(text);
             Close();
-            if (clean.Length > 0) Send(clean, clean);
+            if (clean.Length > 0 && !Emotes.Command(clean)) Send(clean, clean);
         }
 
         // Shown locally as "shown", sent as "wire" (they differ only in a test).

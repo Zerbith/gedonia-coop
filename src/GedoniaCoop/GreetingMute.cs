@@ -23,7 +23,7 @@ namespace GedoniaCoop
         // Decided by clip name, from the speakers export (BepInEx/coop-speakers-en.tsv).
         static readonly string[] Wordless = { "ANIMAL_", "Bark", "Creature_", "Ghost Laughing", "Human_", "Monster_", "Whining" };
 
-        static bool IsSpeech(string clip)
+        internal static bool IsSpeech(string clip)
         {
             foreach (string w in Wordless) if (clip.StartsWith(w, StringComparison.Ordinal)) return false;
             return true;
