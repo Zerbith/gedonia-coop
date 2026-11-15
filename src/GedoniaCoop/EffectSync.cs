@@ -91,6 +91,19 @@ namespace GedoniaCoop
 
         bool Connected { get { foreach (int p in peers()) return true; return false; } }
 
+        // Prefabs other game classes keep in fields of their own (werewolf, demon and
+        // elemental form effects, mount buffs, sub-effects of effects ...) get indices
+        // from ExtraBase on, in a key order both PCs build the same way.
+        const int ExtraBase = 10000;
+        static readonly List<GameObject> extras = new List<GameObject>();
+        static readonly HashSet<string> NotExtras = new HashSet<string>
+        {
+            "NPC", "CompanionNPCModule", "FighterNPCModule", "Mountable", "Container", "PlayerScript", "Camera", "AudioListener",
+            "CharacterController", "Animator", "SaveableItem",
+        };
+        public static int ExtraCount { get { Reindex(); return extras.Count; } }
+        public static int ExtrasSent, ExtrasShown;
+
         static void Reindex()
         {
             PlayerScript p = PlayerScript.instance;
@@ -98,9 +111,103 @@ namespace GedoniaCoop
             indexedFor = p;
             indexOf.Clear();
             copyable.Clear();
+            extras.Clear();
             if (p == null || p.effectsGos == null) return;
             for (int i = 0; i < p.effectsGos.Length; i++)
                 if (p.effectsGos[i] != null && !indexOf.ContainsKey(p.effectsGos[i])) indexOf[p.effectsGos[i]] = i;
+            if (Plugin.NoFix("effectextras")) return;
+            float t0 = Time.realtimeSinceStartup;
+            try { IndexExtras(p); }
+            catch (Exception e) { Plugin.Log.LogWarning("Effect extras index failed: " + e.Message); }
+            Plugin.Log.LogInfo(Plugin.Stamp() + " [effects] " + p.effectsGos.Length + " effect prefabs + " + extras.Count + " from other classes indexed in " + ((Time.realtimeSinceStartup - t0) * 1000f).ToString("F0") + " ms");
+        }
+
+        static bool IsAsset(GameObject g) { return g != null && !g.scene.IsValid(); }
+
+        static void IndexExtras(PlayerScript p)
+        {
+            // key -> prefab; keys name the owner field, so the order is the same everywhere.
+            SortedDictionary<string, GameObject> found = new SortedDictionary<string, GameObject>(StringComparer.Ordinal);
+            List<KeyValuePair<string, GameObject>> owners = new List<KeyValuePair<string, GameObject>>();
+            for (int i = 0; i < p.effectsGos.Length; i++) if (p.effectsGos[i] != null) owners.Add(new KeyValuePair<string, GameObject>("e" + i, p.effectsGos[i]));
+            owners.Add(new KeyValuePair<string, GameObject>("player", p.gameObject));
+            foreach (GameObject m in Resources.LoadAll<GameObject>("Mounts")) owners.Add(new KeyValuePair<string, GameObject>("mount:" + m.name, m));
+            HashSet<GameObject> seen = new HashSet<GameObject>();
+            for (int depth = 0; depth < 3 && owners.Count > 0; depth++)
+            {
+                List<KeyValuePair<string, GameObject>> next = new List<KeyValuePair<string, GameObject>>();
+                foreach (KeyValuePair<string, GameObject> o in owners)
+                {
+                    if (!seen.Add(o.Value)) continue;
+                    foreach (MonoBehaviour mb in o.Value.GetComponentsInChildren<MonoBehaviour>(true))
+                    {
+                        if (mb == null) continue;
+                        Type type = mb.GetType();
+                        if (type.Assembly == typeof(EffectSync).Assembly) continue;
+                        if (type.Name == "StepsManager") continue; // hoof tracks and dust: several per second, not worth the effect budget
+                        foreach (FieldInfo f in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                        {
+                            if (type == typeof(PlayerScript) && f.Name == "effectsGos") continue;
+                            Type ft = f.FieldType;
+                            if (!typeof(Object).IsAssignableFrom(ft) && ft != typeof(GameObject[]) && ft != typeof(List<GameObject>)) continue;
+                            object v;
+                            try { v = f.GetValue(mb); } catch { continue; }
+                            string key = o.Key + "/" + type.Name + "." + f.Name;
+                            if (v is GameObject[]) { GameObject[] a = (GameObject[])v; for (int k = 0; k < a.Length; k++) AddExtra(found, next, key + "[" + k + "]", a[k]); }
+                            else if (v is List<GameObject>) { List<GameObject> a = (List<GameObject>)v; for (int k = 0; k < a.Count; k++) AddExtra(found, next, key + "[" + k + "]", a[k]); }
+                            else AddExtra(found, next, key, v as Object);
+                        }
+                    }
+                }
+                owners = next;
+            }
+            HashSet<GameObject> added = new HashSet<GameObject>();
+            foreach (KeyValuePair<string, GameObject> kv in found)
+            {
+                if (indexOf.ContainsKey(kv.Value) || !added.Add(kv.Value)) continue;
+                bool ok = true;
+                foreach (Component c in kv.Value.GetComponentsInChildren<Component>(true))
+                    if (c != null && NotExtras.Contains(c.GetType().Name)) { ok = false; break; }
+                if (!ok) continue;
+                indexOf[kv.Value] = ExtraBase + extras.Count;
+                extras.Add(kv.Value);
+                if (Plugin.Verbose) Plugin.Log.LogInfo("[effects] extra " + (extras.Count - 1) + " " + kv.Key + " = " + kv.Value.name);
+            }
+        }
+
+        static void AddExtra(SortedDictionary<string, GameObject> found, List<KeyValuePair<string, GameObject>> next, string key, Object v)
+        {
+            GameObject g = v as GameObject;
+            Component c = v as Component;
+            if (g == null && c != null) g = c.gameObject;
+            if (!IsAsset(g) || g.transform.parent != null) return; // a part of a prefab: Instantiate isn't called on it
+            found[key] = g;
+            next.Add(new KeyValuePair<string, GameObject>(key, g));
+        }
+
+        // effectsGos[index], or one of the extras.
+        static GameObject Prototype(int index)
+        {
+            PlayerScript p = PlayerScript.instance;
+            if (p == null) return null;
+            Reindex();
+            if (index >= ExtraBase) { index -= ExtraBase; return index < extras.Count ? extras[index] : null; }
+            return p.effectsGos != null && index >= 0 && index < p.effectsGos.Length ? p.effectsGos[index] : null;
+        }
+
+        // Test-only: instantiates the first extra whose name contains what, near the player.
+        public static void TestExtra(PlayerScript player, string what)
+        {
+            Reindex();
+            for (int i = 0; i < extras.Count; i++)
+            {
+                if (extras[i].name.IndexOf(what, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (!Copyable(ExtraBase + i)) continue;
+                GameObject g = Object.Instantiate(extras[i], player.transform.position + player.transform.forward * 3f, Quaternion.identity);
+                Plugin.Log.LogInfo(Plugin.Stamp() + " Test: extra effect " + i + " '" + extras[i].name + "' 3 m ahead at " + g.transform.position.ToString("F1"));
+                return;
+            }
+            Plugin.Log.LogInfo(Plugin.Stamp() + " Test: no copyable extra effect named like '" + what + "' (" + extras.Count + " extras)");
         }
 
         // Not a projectile (ProjectileSync) and not a body or building.
@@ -108,8 +215,8 @@ namespace GedoniaCoop
         {
             bool ok;
             if (copyable.TryGetValue(index, out ok)) return ok;
-            GameObject proto = PlayerScript.instance.effectsGos[index];
-            ok = proto.GetComponentInChildren<Projectile>(true) == null;
+            GameObject proto = Prototype(index);
+            ok = proto != null && proto.GetComponentInChildren<Projectile>(true) == null;
             if (ok)
                 foreach (MonoBehaviour mb in proto.GetComponentsInChildren<MonoBehaviour>(true))
                     if (mb != null && NotEffects.Contains(mb.GetType().Name)) { ok = false; break; }
@@ -142,6 +249,8 @@ namespace GedoniaCoop
             if (Replaying || Instance == null) return;
             GameObject proto = original as GameObject;
             GameObject go = result as GameObject;
+            if (proto == null && original is Component && (Component)original != null) proto = ((Component)original).gameObject;
+            if (go == null && result is Component && (Component)result != null) go = ((Component)result).gameObject;
             if (proto == null || go == null) return;
             Reindex();
             int index;
@@ -401,7 +510,11 @@ namespace GedoniaCoop
                 // and moved around (EffectsPoolingManager) - hits show on both sides.
                 if (t.parent != null && t.parent.GetComponent<EffectsPoolingManager>() != null) continue;
                 localSpawns.Add(new LocalSpawn { Index = p.Index, Pos = t.position, At = now });
-                if (!p.Send || !connected || !Copyable(p.Index) || !Budget()) continue;
+                if (!p.Send || !connected || !Copyable(p.Index)) continue;
+                // Prefabs from other classes: only what happens around our own player
+                // (world objects that share a prefab stay where they are).
+                if (p.Index >= ExtraBase && Vector3.Distance(t.position, player.transform.position) > 40f) continue;
+                if (!Budget()) continue;
                 byte attach = 0;
                 int actor = 0;
                 string path = "";
@@ -434,6 +547,7 @@ namespace GedoniaCoop
                 }
                 outCount++;
                 SpawnsSent++;
+                if (p.Index >= ExtraBase) ExtrasSent++;
             }
             pending.Clear();
             pendingIds.Clear();
@@ -653,7 +767,8 @@ namespace GedoniaCoop
         void Spawn(int sender, int id, int index, byte attach, int actor, string path, Vector3 pos, Quaternion rot, Vector3[][] lines)
         {
             PlayerScript player = PlayerScript.instance;
-            if (player.effectsGos == null || index < 0 || index >= player.effectsGos.Length || player.effectsGos[index] == null) { Skipped++; return; }
+            GameObject proto = Prototype(index);
+            if (proto == null) { Skipped++; return; }
             Transform parent = null;
             if (attach != 0)
             {
@@ -673,7 +788,7 @@ namespace GedoniaCoop
             try
             {
                 bool timed;
-                GameObject copy = StrippedCopy(player.effectsGos[index], holder.transform, out timed);
+                GameObject copy = StrippedCopy(proto, holder.transform, out timed);
                 LineRenderer[] lrs = copy.GetComponentsInChildren<LineRenderer>(true);
                 for (int l = 0; l < lrs.Length && l < lines.Length; l++)
                 {
@@ -681,7 +796,7 @@ namespace GedoniaCoop
                     lrs[l].positionCount = lines[l].Length;
                     lrs[l].SetPositions(lines[l]);
                 }
-                if (Plugin.Verbose && lrs.Length > 0) Plugin.Log.LogInfo(Plugin.Stamp() + " [effectcopy] beam '" + player.effectsGos[index].name + "' lines=" + lrs.Length + " points=" + (lines.Length > 0 ? lines[0].Length : 0) + (lines.Length > 0 && lines[0].Length > 1 ? " end " + lines[0][1].ToString("F1") : ""));
+                if (Plugin.Verbose && lrs.Length > 0) Plugin.Log.LogInfo(Plugin.Stamp() + " [effectcopy] beam '" + proto.name + "' lines=" + lrs.Length + " points=" + (lines.Length > 0 ? lines[0].Length : 0) + (lines.Length > 0 && lines[0].Length > 1 ? " end " + lines[0][1].ToString("F1") : ""));
                 recentShown.Add(new Shown { Index = index, Pos = world, At = now });
                 if (recentShown.Count > 50) recentShown.RemoveRange(0, 25);
                 if (parent != null)
@@ -697,7 +812,8 @@ namespace GedoniaCoop
                     copy.transform.position = pos;
                     copy.transform.rotation = rot;
                 }
-                copy.name = "CoopEffect " + player.effectsGos[index].name;
+                copy.name = "CoopEffect " + proto.name;
+                if (index >= ExtraBase) ExtrasShown++;
                 Object.Destroy(copy, CopyLifetime);
                 string key = sender + "|" + id;
                 if (!timed) copies[key] = copy; // ends with the original
@@ -737,7 +853,7 @@ namespace GedoniaCoop
 
         public string Summary()
         {
-            return "effects sent=" + SpawnsSent + "+" + ParticlesSent + "p stops=" + StopsSent + " ends=" + EndsSent + " capped=" + Capped + " shown=" + SpawnsShown + "+" + ParticlesShown + "p stopsShown=" + StopsShown + " capStops=" + CapStops + " deduped=" + Deduped + " noTarget=" + NoTarget + " skipped=" + Skipped + " pool sent=" + PoolSent + " played=" + PoolPlayed + " deduped=" + PoolDeduped + " rituals=" + RitualsSent + "/" + RitualsShown + " entrances=" + EntrancesSent + "/" + EntrancesShown;
+            return "effects sent=" + SpawnsSent + "+" + ParticlesSent + "p stops=" + StopsSent + " ends=" + EndsSent + " capped=" + Capped + " shown=" + SpawnsShown + "+" + ParticlesShown + "p stopsShown=" + StopsShown + " capStops=" + CapStops + " deduped=" + Deduped + " noTarget=" + NoTarget + " skipped=" + Skipped + " pool sent=" + PoolSent + " played=" + PoolPlayed + " deduped=" + PoolDeduped + " rituals=" + RitualsSent + "/" + RitualsShown + " entrances=" + EntrancesSent + "/" + EntrancesShown + " extras=" + ExtrasSent + "/" + ExtrasShown + " of " + extras.Count;
         }
 
         // ---------- Harmony ----------

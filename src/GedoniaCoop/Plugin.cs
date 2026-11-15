@@ -58,7 +58,7 @@ namespace GedoniaCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "gedonia.coop";
-        public const string Version = "0.9.11";
+        public const string Version = "0.9.12";
         const float SendInterval = 0.05f;
         const float AppearanceInterval = 1f;
         const float PeerTimeout = 5f;
@@ -274,7 +274,8 @@ namespace GedoniaCoop
             if (Arg(args, "-coop-scale-health") != null) ScaleSync.HealthPerExtra = ParseFloat(Arg(args, "-coop-scale-health"), 0.5f);
             if (Arg(args, "-coop-scale-damage") != null) ScaleSync.DamagePerExtra = ParseFloat(Arg(args, "-coop-scale-damage"), 0.2f);
             if (Arg(args, "-coop-scale-off") != null) ScaleSync.Enabled = false;
-            local.Id = new System.Random().Next(1, int.MaxValue);
+            // Not new Random(): it is seeded from the clock, two games started together got the same id.
+            local.Id = (System.Guid.NewGuid().GetHashCode() & 0x7fffffff) % (int.MaxValue - 1) + 1;
             local.Name = Arg(args, "-coop-name") ?? "Player";
             nameFromArg = Arg(args, "-coop-name") != null;
             autoload = Arg(args, "-coop-autoload");
@@ -1161,6 +1162,7 @@ namespace GedoniaCoop
             GameSkin.Load();
             RespawnStones.Connected = net != null && puppets.Count > 0;
             SessionStats.Tick(net, now);
+            Translator.ModTick(now);
             CheckHotkeys();
             TakeSteamName();
             KeepRunning();
@@ -1801,6 +1803,9 @@ namespace GedoniaCoop
                     else if (step == "cutskip") { Log.LogInfo(Stamp() + " Test: pressing Space (start without the others)"); CutsceneSync.SkipTest = true; }
                     else if (step == "cutstate") Log.LogInfo(Stamp() + " [cutscene] " + (cutscenes != null ? cutscenes.Describe() : "-") + " hold=" + CutsceneSync.Hold.ToString("F2") + " puppetsVisible=" + PuppetsVisible() + " playerActive=" + player.gameObject.activeSelf);
                     else if (step.StartsWith("effect:")) EffectSync.TestEffect(player, step.Substring(7));
+                    else if (step.StartsWith("effectx:")) EffectSync.TestExtra(player, step.Substring(8));
+                    else if (step == "modtexts") Translator.TestModTexts();
+                    else if (step.StartsWith("modtextset:")) Translator.TestSetModText(step.Substring(11));
                     else if (step == "effectstate") Log.LogInfo(Stamp() + " [effects] " + (effects != null ? effects.Describe() : "-"));
                     else if (step == "xplog") Log.LogInfo(Stamp() + " [xp] level " + player.level + " " + player.experience + "/" + player.levelingTable[player.level] + " int=" + player.intellectBasic + (xp != null ? " " + xp.Summary() : "") + (party != null ? " " + party.Summary() : ""));
                     else if (step.StartsWith("intellect:")) { Log.LogInfo(Stamp() + " Test: intellect " + player.intellectBasic + " -> " + step.Substring(10)); player.intellectBasic = int.Parse(step.Substring(10)); }
@@ -1894,6 +1899,9 @@ namespace GedoniaCoop
                         im.compass.SetActive(!im.minimapNotCompass);
                     }
                     else if (step == "optionsdump") ModOptions.TestDump();
+                    else if (step == "optionsopen") InterfaceManager.instance.OpenOptions();
+                    else if (step == "optionscancel") InterfaceManager.instance.CacnelOptionsChanges();
+                    else if (step == "optionsback") InterfaceManager.instance.OnReturnToPauseMenu();
                     else if (step.StartsWith("optionslide:")) { string[] a = step.Substring(12).Split('|'); ModOptions.TestSlide(a[0], ParseFloat(a[1], 0f)); }
                     else if (step.StartsWith("optionsshow:")) ModOptions.TestShow(int.Parse(step.Substring(12)));
                     else if (step == "viewstate") ModOptions.TestState();

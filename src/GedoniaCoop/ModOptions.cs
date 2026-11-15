@@ -46,6 +46,7 @@ namespace GedoniaCoop
             if (!built && now >= nextBuildTry) { nextBuildTry = now + 1f; try { Build(); } catch (Exception e) { built = true; Plugin.Log.LogWarning("[options] sliders: " + e); } }
             if (now >= nextApply) { nextApply = now + 0.5f; try { ApplyView(); } catch (Exception e) { Plugin.Log.LogWarning("[options] view: " + e.Message); } }
             if (recheckAt > 0f && now >= recheckAt) { recheckAt = 0f; Recheck(); }
+            try { MenuDump(); } catch (Exception e) { menuDumpAt = float.MaxValue; Plugin.Log.LogWarning("[menuoptions] " + e); }
             if (saveAt > 0f && now >= saveAt)
             {
                 saveAt = 0f;
@@ -66,8 +67,29 @@ namespace GedoniaCoop
             return null;
         }
 
+        // Main menu: its graphics page is full, so both sliders go on the audio page: the voice-over above the
+        // sound volume (as in the game), the view distance under the "voices" row (copy of the music slider).
+        static readonly Vector3 MenuViewOffset = new Vector3(0f, -123f, 0f);
+
+        void BuildMenu()
+        {
+            MainMenuManager mm = FindObjectOfType<MainMenuManager>();
+            if (mm == null || mm.soundSlider == null || mm.musicSlider == null) return;
+            built = true;
+            if (VoiceOver.Available)
+                voiceSlider = Row(mm.soundSlider, "CoopVoiceVolume", AudioRowOffset, "OnVoiceSlider", "OnVoicePlus", "OnVoiceMinus", "OnSoundPlus", "OnSoundMinus", VoiceText);
+            viewSlider = Row(mm.musicSlider, "CoopViewDistance", MenuViewOffset, "OnViewSlider", "OnViewPlus", "OnViewMinus", "OnMusicPlus", "OnMusicMinus", ViewText);
+            settingSliders = true;
+            if (voiceSlider != null) voiceSlider.value = VoiceOver.Volume / MaxVolume;
+            viewSlider.value = (ViewFactor - 1f) / (MaxView - 1f);
+            settingSliders = false;
+            RefreshLabels();
+            Plugin.Log.LogInfo("[options] sliders added in " + scene + ": voice " + (voiceSlider != null) + ", view " + (viewSlider != null));
+        }
+
         void Build()
         {
+            if (scene == "MainMenu") { BuildMenu(); return; }
             InterfaceManager im = InterfaceManager.instance;
             UISlider sound = FindSlider("OnSoundVolume");
             if (sound == null || im == null || sound.transform.parent.parent != im.soundSlider.transform.parent.parent) return;
@@ -173,6 +195,46 @@ namespace GedoniaCoop
             RefreshLabels();
             recheckAt = Time.realtimeSinceStartup + 5f;
         }
+
+        // ---------- Cancel ----------
+        //
+        // The values when the options were opened; the options' Cancel button puts them back (the game's own
+        // Cancel only closes the panel), leaving them with the back button keeps the new ones.
+        static float openVoice = -1f, openView = -1f;
+        public static int Reverted;
+
+        static void Remember()
+        {
+            openVoice = VoiceOver.Volume;
+            openView = ViewFactor;
+        }
+
+        static void Revert()
+        {
+            if (instance == null || openVoice < 0f) return;
+            if (Mathf.Approximately(openVoice, VoiceOver.Volume) && Mathf.Approximately(openView, ViewFactor)) return;
+            instance.SetVoice(openVoice);
+            instance.SetView(openView);
+            instance.settingSliders = true;
+            if (instance.voiceSlider != null) instance.voiceSlider.value = VoiceOver.Volume / MaxVolume;
+            if (instance.viewSlider != null) instance.viewSlider.value = (ViewFactor - 1f) / (MaxView - 1f);
+            instance.settingSliders = false;
+            instance.RefreshLabels();
+            Reverted++;
+            Plugin.Log.LogInfo("[options] cancel: voice " + VoiceOver.Volume.ToString("F2") + " view " + ViewFactor.ToString("F2") + " again");
+        }
+
+        [HarmonyPatch(typeof(InterfaceManager), "OpenOptions")]
+        static class OpenInGame { static void Postfix() { Remember(); } }
+
+        [HarmonyPatch(typeof(MainMenuManager), "OpenOptions")]
+        static class OpenInMenu { static void Postfix() { Remember(); } }
+
+        [HarmonyPatch(typeof(InterfaceManager), "CacnelOptionsChanges")]
+        static class CancelInGame { static void Postfix() { Revert(); } }
+
+        [HarmonyPatch(typeof(MainMenuManager), "CancelOptions")]
+        static class CancelInMenu { static void Postfix() { Revert(); } }
 
         // Streamers only look at their ranges when the player enters a new tile: make them look, a little
         // later, since GameManager only writes the ranges now and then and a dragged slider moves for a while.
@@ -327,6 +389,55 @@ namespace GedoniaCoop
             sb.Append(" scenes ").Append(SceneManager.sceneCount).Append(" npcs ").Append(FindObjectsOfType<NPC>().Length);
             sb.Append(" allocatedMB ").Append(UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024 * 1024));
             Plugin.Log.LogInfo(sb.ToString());
+        }
+
+        // "-coop-test-menuoptions": in the main menu, opens the options and logs what is on its pages.
+        float menuDumpAt = -1f;
+        void MenuDump()
+        {
+            if (menuDumpAt < 0f) menuDumpAt = Plugin.Arg(Environment.GetCommandLineArgs(), "-coop-test-menuoptions") != null ? Time.realtimeSinceStartup + 2f : float.MaxValue;
+            if (Time.realtimeSinceStartup < menuDumpAt || scene != "MainMenu") return;
+            menuDumpAt = float.MaxValue;
+            MainMenuManager mm = FindObjectOfType<MainMenuManager>();
+            if (mm == null) { Plugin.Log.LogInfo("[menuoptions] no MainMenuManager"); return; }
+            StartCoroutine(MenuCheck(mm));
+        }
+
+        // Audio page with both sliders (shot), then: move the view slider, Cancel -> old value; move it, Apply -> kept.
+        System.Collections.IEnumerator MenuCheck(MainMenuManager mm)
+        {
+            mm.OpenOptions();
+            Transform opt = mm.panels[5].transform;
+            foreach (Transform c in opt) if (c.name.EndsWith("SubPanel") || c.name == "Audio" || c.name == "Keybinds" || c.name == "Interface" || c.name == "ClearAll") c.gameObject.SetActive(c.name == "Audio");
+            yield return new WaitForSeconds(1f);
+            DumpAround(mm.soundSlider, "menu audio");
+            string dir = System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "coop-shots");
+            System.IO.Directory.CreateDirectory(dir);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, "Menu_audio.png"));
+            yield return new WaitForSeconds(1f);
+            float before = ViewFactor;
+            if (viewSlider != null) viewSlider.value = 0.8f;
+            yield return null;
+            Plugin.Log.LogInfo("[menuoptions] view moved " + before.ToString("F2") + " -> " + ViewFactor.ToString("F2") + " label '" + ViewText() + "'");
+            mm.CancelOptions();
+            yield return null;
+            Plugin.Log.LogInfo("[menuoptions] after Cancel view " + ViewFactor.ToString("F2") + " slider " + (viewSlider != null ? viewSlider.value.ToString("F2") : "-") + " reverted=" + Reverted);
+            mm.OpenOptions();
+            if (viewSlider != null) viewSlider.value = 0.2f;
+            yield return null;
+            mm.OnReturnToMainMenu();
+            yield return new WaitForSeconds(2f);
+            Plugin.Log.LogInfo("[menuoptions] after Apply view " + ViewFactor.ToString("F2") + " config " + (ViewEntry != null ? ViewEntry.Value.ToString("F2") : "-") + " reverted=" + Reverted);
+            SetView(before);
+            saveAt = Time.realtimeSinceStartup;
+        }
+
+        static void DumpTree(Transform t, int depth)
+        {
+            if (depth > 3) return;
+            UILabel l = t.GetComponent<UILabel>();
+            Plugin.Log.LogInfo("[menuoptions] " + new string(' ', depth * 2) + t.name + " active=" + t.gameObject.activeSelf + " pos=" + t.localPosition.ToString("F0") + (l != null ? " text='" + l.text.Replace("\n", " ") + "'" : "") + (t.GetComponent<UISlider>() != null ? " SLIDER" : ""));
+            foreach (Transform c in t) DumpTree(c, depth + 1);
         }
 
         public static void TestDump()

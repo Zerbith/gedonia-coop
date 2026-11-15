@@ -18,7 +18,7 @@ namespace GedoniaCoop
     // "You have 25 gold" and the German gets the same pieces, themselves
     // translated when they are known texts (item names...). Texts with no
     // German are logged once (BepInEx/config/gedonia-coop-missing-de.txt).
-    public static class Translator
+    public static partial class Translator
     {
         class Template
         {
@@ -86,6 +86,7 @@ namespace GedoniaCoop
                     germanTexts.Add(de);
                     if (Slot.IsMatch(en)) AddTemplate(en, de);
                 }
+            LoadModTable();
             // The most specific first.
             templates.Sort((a, b) => b.Key.Length.CompareTo(a.Key.Length));
             Plugin.Log.LogInfo("German tables: " + files.Length + " files, " + exact.Count + " texts, " + templates.Count + " templates");

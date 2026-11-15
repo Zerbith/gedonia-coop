@@ -46,20 +46,24 @@ erscheint, wird gesammelt in  <Gedonia-Ordner>\BepInEx\config\gedonia-coop-missi
 - diese Datei gerne mitschicken.
 Sprachausgabe: Auf Deutsch werden die Dialoge der NPCs und die Questtexte im Tagebuch
 vorgelesen, und die vertonten Zwischensequenzen sprechen Deutsch (KI-Stimmen, Ordner BepInEx\plugins\voice-de).
-Lautstaerke: Regler "Sprachausgabe" (0-300 %) im Spiel unter Esc > Optionen > Audio. Bei mehr als 100 % kann in
+Lautstaerke: Regler "Sprachausgabe" (0-300 %) unter Optionen > Audio (im Hauptmenue und im Spiel). Bei mehr als 100 % kann in
 Zwischensequenzen, die Sprache und Musik ueber dieselbe Tonspur spielen, auch die Musik lauter werden.
 Ganz ausschalten: <Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt [VoiceOver], Enabled.
 Die kurzen englischen Sprueche beim Ansprechen eines NPCs sind auf Deutsch immer aus, die NPCs
 gruessen stattdessen mit den deutschen Stimmen. Die Spieloption "Voices" kann an bleiben: Sie schaltet
 auf Deutsch nur noch Originallaute ohne Worte ab (Tierlaute beim Ansprechen, Lacher und Schreie in
 Zwischensequenzen), die deutsche Vertonung bleibt immer hoerbar.
+Gegenstaende aus anderen Gedonia-Mods (Workshop): deren Autoren schreiben nur Englisch/Russisch. Der Co-op-Mod
+schreibt ihre Texte nach <Gedonia-Ordner>\BepInEx\config\gedonia-coop-de-mods.tsv - hinter den Tabulator einer
+Zeile das Deutsche schreiben, das Spiel uebernimmt es sofort.
 
 
 WEITSICHT
 ---------
-Regler "Weitsicht" (100-250 %) im Spiel unter Esc > Optionen > Grafik, wirkt nach wenigen Sekunden und gilt nur
-fuer deinen PC. Gegner und NPCs laden weiter in der normalen Entfernung. Mehr Weitsicht kostet Leistung und etwas
-Speicher: wenn das Spiel ruckelt, wieder herunterstellen. Auch einstellbar in
+Regler "Weitsicht" (100-250 %) im Spiel unter Esc > Optionen > Grafik oder im Hauptmenue unter Optionen > Audio
+(die Grafikseite dort ist voll). "Abbrechen" setzt die Regler des Mods auf den alten Wert zurueck. Wirkt nach
+wenigen Sekunden und gilt nur fuer deinen PC. Gegner und NPCs laden weiter in der normalen Entfernung. Mehr
+Weitsicht kostet Leistung und etwas Speicher: wenn das Spiel ruckelt, wieder herunterstellen. Auch einstellbar in
 <Gedonia-Ordner>\BepInEx\config\gedonia.coop.cfg, Abschnitt [Graphics]. Die "Weltladeweite" im Hauptmenue
 bleibt die Spieloption und kommt dazu.
 

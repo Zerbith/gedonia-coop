@@ -4,7 +4,7 @@ Online co-op for **Gedonia** (the original single-player RPG, Steam app 1114220 
 A BepInEx 5 plugin that lets two or more players play the open world and story together,
 over Steam (friends, invites, relay - no port forwarding) or in the home network (LAN).
 
-Status: **playable alpha** (0.9.11). Tested with Steam build 16727998.
+Status: **playable alpha** (0.9.12). Tested with Steam build 16727998.
 
 Unofficial fan project, not affiliated with or endorsed by the developer of Gedonia.
 No game files are included; you need your own copy of the game.
@@ -12,7 +12,8 @@ No game files are included; you need your own copy of the game.
 ## What is shared
 
 - **Players:** your real character model, animations, looks and gear, weapons, arrows and spells,
-  spell and combat effects (healing, elements, weapon trails, hit sparks and blood), transformations (werewolf, blood demon,
+  spell and combat effects (healing, elements, weapon trails, hit sparks and blood, impacts and the strikes of the forms,
+  mount buffs), transformations (werewolf, blood demon,
   elemental forms), Steam name above the head, markers on world map, minimap and compass (group members), sounds
   (steps, swings, hits).
 - **Mounts:** a summoned mount and its rider are seen and heard by everyone (feet in the stirrups). Anyone can ride a mount another player has called - while you ride it, the owner's one is gone, and it stands where you get off. Next to a mount someone rides, F seats you behind the rider.
@@ -62,7 +63,7 @@ No game files are included; you need your own copy of the game.
   (kept by the host).
 - **Mod weapons:** a player without the same Gedonia mod sees a game weapon of the same type instead of an empty hand.
 - Pause menu does not stop the game in co-op.
-- **View distance:** an extra slider (Esc > Options > Graphics, 100-250 %) for scenery only; enemies and NPCs load as before.
+- **View distance:** an extra slider (Esc > Options > Graphics, or main menu > Options > Audio; 100-250 %) for scenery only; enemies and NPCs load as before. "Cancel" in the options puts the mod's sliders back.
 - **Look:** the co-op menu, group, trade and chat windows and the group member frames use the game's own window art and font (taken from the game at runtime; no game files in this repository).
 
 ## Install (players)

@@ -199,9 +199,12 @@ GERMAN TRANSLATION
 The mod also brings a German translation: button "Deutsch" next to "English" at the bottom
 left of the main menu. English stays the default.
 In German, NPC dialogues and the journal's quest texts are read aloud and the voiced cutscenes speak German (AI voices, folder
-BepInEx\plugins\voice-de). Volume: slider "Voice-over volume" (0-300 %) in the game under Esc > Options > Audio. Above
+BepInEx\plugins\voice-de). Volume: slider "Voice-over volume" (0-300 %) under Options > Audio (main menu and in game). Above
 100 %, cutscenes that play speech and music on one audio track can also get louder music.
 Turn off completely: <Gedonia folder>\BepInEx\config\gedonia.coop.cfg, section [VoiceOver], Enabled.
+Items of other Gedonia mods (Workshop): their authors only write English/Russian. The co-op mod writes their texts
+to <Gedonia folder>\BepInEx\config\gedonia-coop-de-mods.tsv - write the German after the tab of a line, the game
+uses it at once.
 In German the short English lines NPCs say when addressed are always off; they greet in the German voices
 instead. The game's "Voices" option can stay on: in German it only turns off original sounds without words
 (animal sounds when addressed, laughs and screams in cutscenes). The German voices stay audible.
@@ -209,7 +212,8 @@ instead. The game's "Voices" option can stay on: in German it only turns off ori
 
 VIEW DISTANCE
 -------------
-Slider "View distance" (100-250 %) in the game under Esc > Options > Graphics. It works after a few seconds and
+Slider "View distance" (100-250 %) in the game under Esc > Options > Graphics, or in the main menu under Options >
+Audio (the graphics page there is full). "Cancel" puts the mod's sliders back. It works after a few seconds and
 only on your PC. Enemies and NPCs still load at the normal distance. More view distance costs performance and some
 memory: turn it down if the game stutters. Also in <Gedonia folder>\BepInEx\config\gedonia.coop.cfg, section
 [Graphics]. The game's world load distance in the main menu stays and adds to it.
